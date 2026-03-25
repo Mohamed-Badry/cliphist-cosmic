@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
 use cosmic::app::{Core, Task};
-use cosmic::iced::event::{self, Event};
-use cosmic::iced::keyboard::{self, Key, key::Named};
 use cosmic::iced::platform_specific::runtime::wayland::layer_surface::{
     IcedMargin, SctkLayerSurfaceSettings,
 };
@@ -10,55 +8,40 @@ use cosmic::iced::platform_specific::shell::commands::layer_surface::{
     Anchor, KeyboardInteractivity, Layer, get_layer_surface,
 };
 use cosmic::iced::widget::scrollable::RelativeOffset;
-use cosmic::iced::{ContentFit, Length, Limits, Subscription};
-use cosmic::theme::Button as ButtonStyle;
+use cosmic::iced::{Limits, Subscription};
 use cosmic::widget;
 use cosmic::{Application, Element, executor};
+use std::time::Duration;
+use std::time::Instant;
 
 use crate::cliphist::{copy_entry, decode_page_images, delete_entry, load_history};
-use crate::config::{IMAGE_HEIGHT, PAGE_SIZE, WINDOW_HEIGHT, WINDOW_TOP_MARGIN, WINDOW_WIDTH};
+use crate::config::{PAGE_SIZE, WINDOW_HEIGHT, WINDOW_TOP_MARGIN, WINDOW_WIDTH};
+use crate::messages::{Message, VimMode};
 use crate::models::ClipItem;
 use crate::utils::{current_page_indices, next_selected_index, page_count};
 
-#[derive(Clone, Debug)]
-pub enum Message {
-    SearchChanged(String),
-    ClearSearch,
-    MoveSelection(i32),
-    PrevPage,
-    NextPage,
-    ActivateSelection,
-    SelectAndActivate(usize),
-    Reload,
-    DeleteSelected,
-    CloseWindow,
-    CopyDone(Result<(), String>),
-    PageImagesLoaded {
-        request_id: u64,
-        images: Vec<(usize, Result<Vec<u8>, String>)>,
-    },
-}
-
 pub struct ClipboardApp {
-    core: Core,
-    items: Vec<ClipItem>,
-    filtered: Vec<usize>,
-    search_query: String,
-    selected: Option<usize>,
-    page: usize,
-    search_id: widget::Id,
-    list_id: widget::Id,
-    page_images: HashMap<usize, widget::image::Handle>,
-    page_image_errors: HashMap<usize, String>,
-    page_image_request: u64,
-    status: Option<String>,
+    pub(crate) core: Core,
+    pub(crate) items: Vec<ClipItem>,
+    pub(crate) filtered: Vec<usize>,
+    pub(crate) search_query: String,
+    pub(crate) selected: Option<usize>,
+    pub(crate) page: usize,
+    pub(crate) search_id: widget::Id,
+    pub(crate) dummy_id: widget::Id,
+    pub(crate) list_id: widget::Id,
+    pub(crate) page_images: HashMap<usize, widget::image::Handle>,
+    pub(crate) page_image_errors: HashMap<usize, String>,
+    pub(crate) page_image_request: u64,
+    pub(crate) status: Option<String>,
+    pub(crate) vim_mode: Option<VimMode>,
 }
 
 impl Application for ClipboardApp {
     type Executor = executor::Default;
-    type Flags = ();
+    type Flags = bool;
     type Message = Message;
-    const APP_ID: &'static str = "com.crim.Cliprs";
+    const APP_ID: &'static str = "com.github.cliprs";
 
     fn core(&self) -> &Core {
         &self.core
@@ -68,7 +51,7 @@ impl Application for ClipboardApp {
         &mut self.core
     }
 
-    fn init(mut core: Core, _flags: Self::Flags) -> (Self, Task<Self::Message>) {
+    fn init(mut core: Core, is_vim: Self::Flags) -> (Self, Task<Self::Message>) {
         core.window.use_template = false;
         core.window.show_headerbar = false;
         core.window.content_container = false;
@@ -78,11 +61,14 @@ impl Application for ClipboardApp {
 
         let surface_id = cosmic::iced::window::Id::unique();
         let search_id = widget::Id::unique();
+        let dummy_id = widget::Id::unique();
         let list_id = widget::Id::unique();
         let (items, status) = match load_history() {
             Ok(items) => (items, None),
             Err(err) => (Vec::new(), Some(err)),
         };
+
+        let vim_mode = if is_vim { Some(VimMode::Normal) } else { None };
 
         let mut app = Self {
             core,
@@ -92,16 +78,23 @@ impl Application for ClipboardApp {
             selected: None,
             page: 0,
             search_id,
+            dummy_id,
             list_id,
             page_images: HashMap::new(),
             page_image_errors: HashMap::new(),
             page_image_request: 0,
             status,
+            vim_mode,
         };
 
         app.rebuild_filtered(None);
 
-        let search_focus = widget::text_input::focus(app.search_id.clone());
+        let focus_task = if matches!(app.vim_mode, Some(VimMode::Normal)) {
+            widget::button::focus(app.dummy_id.clone())
+        } else {
+            widget::text_input::focus(app.search_id.clone())
+        };
+
         let scroll = app.scroll_to_selection();
         let image_task = app.load_visible_images();
 
@@ -109,7 +102,7 @@ impl Application for ClipboardApp {
             app,
             Task::batch([
                 layer_surface_task(surface_id),
-                search_focus,
+                focus_task,
                 scroll,
                 image_task,
             ]),
@@ -125,51 +118,66 @@ impl Application for ClipboardApp {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        event::listen_with(|event, status, _id| match event {
-            Event::Window(cosmic::iced::window::Event::Unfocused) => Some(Message::CloseWindow),
-            Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                if key == Key::Named(Named::Escape) {
-                    return Some(Message::CloseWindow);
-                }
-
-                if key == Key::Named(Named::Enter) {
-                    return Some(Message::ActivateSelection);
-                }
-
-                if status == event::Status::Ignored {
-                    match key {
-                        Key::Named(Named::ArrowDown) => Some(Message::MoveSelection(1)),
-                        Key::Named(Named::ArrowUp) => Some(Message::MoveSelection(-1)),
-                        Key::Named(Named::PageDown) => Some(Message::NextPage),
-                        Key::Named(Named::PageUp) => Some(Message::PrevPage),
-                        Key::Named(Named::Home) => Some(Message::MoveSelection(i32::MIN)),
-                        Key::Named(Named::End) => Some(Message::MoveSelection(i32::MAX)),
-                        Key::Named(Named::Delete)
-                            if !modifiers.control()
-                                && !modifiers.alt()
-                                && !modifiers.shift()
-                                && !modifiers.logo() =>
-                        {
-                            Some(Message::DeleteSelected)
-                        }
-                        Key::Character(ch)
-                            if modifiers.control() && ch.as_str().eq_ignore_ascii_case("r") =>
-                        {
-                            Some(Message::Reload)
-                        }
-                        _ => None,
-                    }
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        })
+        crate::keyboard::subscription()
     }
 
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
         match message {
+            Message::NoOp => Task::none(),
+            Message::EnterNormalMode => {
+                if let Some(VimMode::Insert { .. }) = self.vim_mode {
+                    self.vim_mode = Some(VimMode::Normal);
+                    Task::batch([widget::button::focus(self.dummy_id.clone())])
+                } else {
+                    Task::none()
+                }
+            }
+            Message::EnterInsertMode => {
+                if let Some(VimMode::Normal) = self.vim_mode {
+                    self.vim_mode = Some(VimMode::Insert { last_j: None });
+                    Task::batch([
+                        widget::text_input::focus(self.search_id.clone()),
+                        widget::text_input::move_cursor_to_end(self.search_id.clone()),
+                    ])
+                } else {
+                    Task::none()
+                }
+            }
+            Message::GlobalEscape => {
+                if let Some(VimMode::Insert { .. }) = self.vim_mode {
+                    self.update(Message::EnterNormalMode)
+                } else {
+                    self.update(Message::CloseWindow)
+                }
+            }
+            Message::HandleVimAction(action) => self.handle_vim_action(action),
             Message::SearchChanged(query) => {
+                if let Some(VimMode::Normal) = self.vim_mode {
+                    return Task::none();
+                }
+
+                if let Some(VimMode::Insert { last_j }) = &mut self.vim_mode {
+                    if query.ends_with("jk")
+                        && let Some(j_time) = last_j
+                        && Instant::now().duration_since(*j_time) < Duration::from_millis(300)
+                    {
+                        self.search_query = query[..query.len() - 2].to_string();
+                        self.vim_mode = Some(VimMode::Normal);
+                        self.status = None;
+                        self.rebuild_filtered(None);
+                        return Task::batch([
+                            widget::button::focus(self.dummy_id.clone()),
+                            self.scroll_to_selection(),
+                            self.load_visible_images(),
+                        ]);
+                    }
+                    if query.ends_with('j') {
+                        *last_j = Some(Instant::now());
+                    } else {
+                        *last_j = None;
+                    }
+                }
+
                 self.search_query = query;
                 self.status = None;
                 self.rebuild_filtered(None);
@@ -231,7 +239,6 @@ impl Application for ClipboardApp {
             Message::ActivateSelection => self.copy_selected(),
             Message::SelectAndActivate(index) => {
                 self.selected = Some(index);
-                self.sync_page_to_selection();
                 self.copy_selected()
             }
             Message::Reload => self.reload_history(),
@@ -277,126 +284,11 @@ impl Application for ClipboardApp {
 }
 
 impl ClipboardApp {
-    fn content_view(&self) -> Element<'_, Message> {
-        let spacing = cosmic::theme::spacing();
-        let total_pages = page_count(self.filtered.len());
-        let visible = current_page_indices(&self.filtered, self.page);
-
-        let search = widget::text_input::search_input("Search clipboard", &self.search_query)
-            .on_input(Message::SearchChanged)
-            .on_clear(Message::ClearSearch)
-            .id(self.search_id.clone())
-            .width(Length::Fill);
-
-        let results_label = if self.filtered.is_empty() {
-            "No results".to_string()
-        } else {
-            format!("{} results", self.filtered.len())
-        };
-        let page_label = if total_pages == 0 {
-            "Page 0/0".to_string()
-        } else {
-            format!("Page {}/{}", self.page + 1, total_pages)
-        };
-
-        let mut list = widget::column().spacing(spacing.space_s);
-        for index in visible.iter().copied() {
-            list = list.push(self.render_item(index));
-        }
-
-        if visible.is_empty() {
-            list = list.push(
-                widget::container(widget::text(
-                    "No clipboard entries match the current search.",
-                ))
-                .padding(spacing.space_s),
-            );
-        }
-
-        let status = self.status.as_deref().unwrap_or(
-            "Enter copies | PageUp/PageDown switches page | Del deletes | Ctrl+R reloads | Esc closes",
-        );
-
-        let content = widget::container(
-            widget::column()
-                .spacing(spacing.space_m)
-                .padding([spacing.space_m, spacing.space_l])
-                .push(search)
-                .push(
-                    widget::row()
-                        .push(widget::text(results_label).size(13))
-                        .push(widget::space::horizontal())
-                        .push(widget::text(page_label).size(13)),
-                )
-                .push(
-                    widget::scrollable(list)
-                        .id(self.list_id.clone())
-                        .height(Length::Fill),
-                )
-                .push(widget::text(status).size(12)),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .class(cosmic::theme::Container::Background);
-
-        widget::layer_container(content).into()
-    }
-
-    fn render_item(&self, index: usize) -> Element<'_, Message> {
-        let spacing = cosmic::theme::spacing();
-        let item = &self.items[index];
-        let selected = self.selected == Some(index);
-
-        if item.kind.is_image() {
-            let preview: Element<'_, Message> = match self.page_images.get(&index) {
-                Some(handle) => widget::image(handle.clone())
-                    .width(Length::Fill)
-                    .height(Length::Fixed(IMAGE_HEIGHT))
-                    .content_fit(ContentFit::Contain)
-                    .into(),
-                None => {
-                    let message = self
-                        .page_image_errors
-                        .get(&index)
-                        .map_or("Loading image preview...", String::as_str);
-
-                    widget::container(widget::text(message))
-                        .width(Length::Fill)
-                        .height(Length::Fixed(IMAGE_HEIGHT))
-                        .center_x(Length::Fill)
-                        .center_y(Length::Fixed(IMAGE_HEIGHT))
-                        .into()
-                }
-            };
-
-            widget::button::custom(preview)
-                .class(ButtonStyle::ListItem)
-                .selected(selected)
-                .width(Length::Fill)
-                .padding(spacing.space_s)
-                .on_press(Message::SelectAndActivate(index))
-                .into()
-        } else {
-            let preview = widget::text(item.preview_text())
-                .width(Length::Fill)
-                .size(14)
-                .wrapping(cosmic::iced::widget::text::Wrapping::WordOrGlyph);
-
-            widget::button::custom(widget::container(preview).width(Length::Fill))
-                .class(ButtonStyle::ListItem)
-                .selected(selected)
-                .width(Length::Fill)
-                .padding(spacing.space_s)
-                .on_press(Message::SelectAndActivate(index))
-                .into()
-        }
-    }
-
-    fn close_window(&self) -> Task<Message> {
+    pub(crate) fn close_window(&self) -> Task<Message> {
         cosmic::iced::exit()
     }
 
-    fn rebuild_filtered(&mut self, preferred_line: Option<&str>) {
+    pub(crate) fn rebuild_filtered(&mut self, preferred_line: Option<&str>) {
         let query = self.search_query.trim().to_lowercase();
 
         self.filtered = self
@@ -411,11 +303,11 @@ impl ClipboardApp {
         self.sync_page_to_selection();
     }
 
-    fn selected_item(&self) -> Option<&ClipItem> {
+    pub(crate) fn selected_item(&self) -> Option<&ClipItem> {
         self.selected.and_then(|index| self.items.get(index))
     }
 
-    fn coerce_selection(&mut self, preferred_line: Option<&str>) {
+    pub(crate) fn coerce_selection(&mut self, preferred_line: Option<&str>) {
         self.selected = preferred_line
             .and_then(|line| {
                 self.filtered
@@ -427,7 +319,11 @@ impl ClipboardApp {
             .or_else(|| self.filtered.first().copied());
     }
 
-    fn sync_page_to_selection(&mut self) {
+    pub(crate) fn move_selection(&mut self, delta: i32) {
+        self.selected = next_selected_index(&self.filtered, self.selected, delta);
+    }
+
+    pub(crate) fn sync_page_to_selection(&mut self) {
         let total_pages = page_count(self.filtered.len());
 
         if total_pages == 0 {
@@ -437,18 +333,14 @@ impl ClipboardApp {
 
         self.page = self.page.min(total_pages - 1);
 
-        if let Some(selected) = self.selected
-            && let Some(position) = self.filtered.iter().position(|index| *index == selected)
-        {
-            self.page = position / PAGE_SIZE;
+        if let Some(selected) = self.selected {
+            if let Some(position) = self.filtered.iter().position(|index| *index == selected) {
+                self.page = position / PAGE_SIZE;
+            }
         }
     }
 
-    fn move_selection(&mut self, delta: i32) {
-        self.selected = next_selected_index(&self.filtered, self.selected, delta);
-    }
-
-    fn change_page(&mut self, delta: isize) -> bool {
+    pub(crate) fn change_page(&mut self, delta: isize) -> bool {
         let total_pages = page_count(self.filtered.len());
         if total_pages == 0 {
             self.page = 0;
@@ -468,7 +360,7 @@ impl ClipboardApp {
         changed
     }
 
-    fn scroll_to_selection(&self) -> Task<Message> {
+    pub(crate) fn scroll_to_selection(&self) -> Task<Message> {
         let visible = current_page_indices(&self.filtered, self.page);
         let Some(selected) = self.selected else {
             return Task::none();
@@ -492,7 +384,7 @@ impl ClipboardApp {
         )
     }
 
-    fn load_visible_images(&mut self) -> Task<Message> {
+    pub(crate) fn load_visible_images(&mut self) -> Task<Message> {
         self.page_image_request = self.page_image_request.wrapping_add(1);
         self.page_images.clear();
         self.page_image_errors.clear();
@@ -514,7 +406,7 @@ impl ClipboardApp {
         })
     }
 
-    fn copy_selected(&mut self) -> Task<Message> {
+    pub(crate) fn copy_selected(&mut self) -> Task<Message> {
         if self.status.as_deref() == Some("Copying...") {
             return Task::none();
         }
@@ -530,7 +422,7 @@ impl ClipboardApp {
         })
     }
 
-    fn reload_history(&mut self) -> Task<Message> {
+    pub(crate) fn reload_history(&mut self) -> Task<Message> {
         let preferred_line = self.selected_item().map(|item| item.line.clone());
 
         match load_history() {
@@ -550,7 +442,7 @@ impl ClipboardApp {
         Task::batch([self.scroll_to_selection(), image_task])
     }
 
-    fn delete_selected(&mut self) -> Task<Message> {
+    pub(crate) fn delete_selected(&mut self) -> Task<Message> {
         let Some(item) = self.selected_item().cloned() else {
             self.status = Some("Nothing is selected.".to_string());
             return Task::none();
