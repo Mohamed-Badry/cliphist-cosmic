@@ -28,7 +28,6 @@ pub enum Message {
     PrevPage,
     NextPage,
     ActivateSelection,
-    SelectIndex(usize),
     SelectAndActivate(usize),
     Reload,
     DeleteSelected,
@@ -230,11 +229,6 @@ impl Application for ClipboardApp {
                 Task::batch([self.scroll_to_selection(), image_task])
             }
             Message::ActivateSelection => self.copy_selected(),
-            Message::SelectIndex(index) => {
-                self.selected = Some(index);
-                self.sync_page_to_selection();
-                Task::none()
-            }
             Message::SelectAndActivate(index) => {
                 self.selected = Some(index);
                 self.sync_page_to_selection();
@@ -553,11 +547,7 @@ impl ClipboardApp {
         self.rebuild_filtered(preferred_line.as_deref());
         let image_task = self.load_visible_images();
 
-        Task::batch([
-            widget::text_input::focus(self.search_id.clone()),
-            self.scroll_to_selection(),
-            image_task,
-        ])
+        Task::batch([self.scroll_to_selection(), image_task])
     }
 
     fn delete_selected(&mut self) -> Task<Message> {
