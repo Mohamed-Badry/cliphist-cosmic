@@ -76,7 +76,7 @@ pub fn copy_entry(item: &ClipItem) -> Result<(), String> {
     let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::null())
         .spawn()
         .map_err(|err| format!("Failed to run wl-copy: {err}"))?;
 
@@ -90,17 +90,14 @@ pub fn copy_entry(item: &ClipItem) -> Result<(), String> {
             .map_err(|err| format!("Failed to send clipboard payload to wl-copy: {err}"))?;
     }
 
-    let output = child
-        .wait_with_output()
+    let status = child
+        .wait()
         .map_err(|err| format!("Failed to wait for wl-copy: {err}"))?;
 
-    if output.status.success() {
+    if status.success() {
         Ok(())
     } else {
-        Err(stderr_message(
-            "wl-copy failed",
-            String::from_utf8_lossy(&output.stderr).trim(),
-        ))
+        Err("wl-copy failed".to_string())
     }
 }
 

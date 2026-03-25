@@ -20,14 +20,6 @@ impl ClipKind {
         Self::Text
     }
 
-    pub fn label(&self) -> &str {
-        match self {
-            Self::Text => "TEXT",
-            Self::Html => "HTML",
-            Self::Binary(_) => "BINARY",
-        }
-    }
-
     pub fn mime_type(&self) -> Option<&str> {
         match self {
             Self::Text => None,
@@ -66,13 +58,6 @@ impl ClipItem {
 
     pub fn preview_text(&self) -> String {
         compact_preview_text(&self.preview)
-    }
-
-    pub fn image_caption(&self) -> String {
-        match &self.kind {
-            ClipKind::Binary(mime) => mime.clone(),
-            _ => self.preview_text(),
-        }
     }
 }
 

@@ -29,6 +29,7 @@ pub enum Message {
     NextPage,
     ActivateSelection,
     SelectIndex(usize),
+    SelectAndActivate(usize),
     Reload,
     DeleteSelected,
     CloseWindow,
@@ -234,6 +235,11 @@ impl Application for ClipboardApp {
                 self.sync_page_to_selection();
                 Task::none()
             }
+            Message::SelectAndActivate(index) => {
+                self.selected = Some(index);
+                self.sync_page_to_selection();
+                self.copy_selected()
+            }
             Message::Reload => self.reload_history(),
             Message::DeleteSelected => self.delete_selected(),
             Message::CloseWindow => self.close_window(),
@@ -346,15 +352,6 @@ impl ClipboardApp {
         let spacing = cosmic::theme::spacing();
         let item = &self.items[index];
         let selected = self.selected == Some(index);
-        let class = if selected {
-            ButtonStyle::Suggested
-        } else {
-            ButtonStyle::Standard
-        };
-        let header = widget::row()
-            .push(widget::text(item.kind.label()).size(11))
-            .push(widget::space::horizontal())
-            .push(widget::text(format!("#{}", item.id)).size(11));
 
         if item.kind.is_image() {
             let preview: Element<'_, Message> = match self.page_images.get(&index) {
@@ -377,42 +374,27 @@ impl ClipboardApp {
                         .into()
                 }
             };
-            let caption = widget::text(item.image_caption())
-                .width(Length::Fill)
-                .size(12)
-                .wrapping(cosmic::iced::widget::text::Wrapping::WordOrGlyph);
 
-            widget::button::custom(
-                widget::column()
-                    .spacing(spacing.space_xxs)
-                    .push(header)
-                    .push(preview)
-                    .push(caption),
-            )
-            .class(class)
-            .selected(selected)
-            .width(Length::Fill)
-            .padding(spacing.space_s)
-            .on_press(Message::SelectIndex(index))
-            .into()
+            widget::button::custom(preview)
+                .class(ButtonStyle::ListItem)
+                .selected(selected)
+                .width(Length::Fill)
+                .padding(spacing.space_s)
+                .on_press(Message::SelectAndActivate(index))
+                .into()
         } else {
             let preview = widget::text(item.preview_text())
                 .width(Length::Fill)
                 .size(14)
                 .wrapping(cosmic::iced::widget::text::Wrapping::WordOrGlyph);
 
-            widget::button::custom(
-                widget::column()
-                    .spacing(spacing.space_xxs)
-                    .push(header)
-                    .push(widget::container(preview).width(Length::Fill)),
-            )
-            .class(class)
-            .selected(selected)
-            .width(Length::Fill)
-            .padding(spacing.space_s)
-            .on_press(Message::SelectIndex(index))
-            .into()
+            widget::button::custom(widget::container(preview).width(Length::Fill))
+                .class(ButtonStyle::ListItem)
+                .selected(selected)
+                .width(Length::Fill)
+                .padding(spacing.space_s)
+                .on_press(Message::SelectAndActivate(index))
+                .into()
         }
     }
 
@@ -539,6 +521,10 @@ impl ClipboardApp {
     }
 
     fn copy_selected(&mut self) -> Task<Message> {
+        if self.status.as_deref() == Some("Copying...") {
+            return Task::none();
+        }
+
         let Some(item) = self.selected_item().cloned() else {
             self.status = Some("Nothing is selected.".to_string());
             return Task::none();
