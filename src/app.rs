@@ -9,7 +9,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use crate::cliphist::{copy_entry, decode_page_images, delete_entry, load_history};
-use crate::config::PAGE_SIZE;
+use crate::config::Config;
 use crate::messages::{Message, VimMode};
 use crate::models::ClipItem;
 use crate::utils::{current_page_indices, next_selected_index, page_count};
@@ -34,6 +34,7 @@ enum SearchChangeAction {
 
 pub struct ClipboardApp {
     pub(crate) core: Core,
+    pub(crate) config: Config,
     pub(crate) items: Vec<ClipItem>,
     pub(crate) filtered: Vec<usize>,
     pub(crate) search_query: String,
@@ -51,7 +52,7 @@ pub struct ClipboardApp {
 
 impl Application for ClipboardApp {
     type Executor = executor::Default;
-    type Flags = bool;
+    type Flags = (bool, Config);
     type Message = Message;
     const APP_ID: &'static str = "com.github.cliphist_cosmic";
 
@@ -63,7 +64,7 @@ impl Application for ClipboardApp {
         &mut self.core
     }
 
-    fn init(mut core: Core, is_vim: Self::Flags) -> (Self, Task<Self::Message>) {
+    fn init(mut core: Core, (is_vim, config): Self::Flags) -> (Self, Task<Self::Message>) {
         core.window.use_template = false;
         core.window.show_headerbar = false;
         core.window.content_container = false;
@@ -83,6 +84,7 @@ impl Application for ClipboardApp {
 
         let mut app = Self {
             core,
+            config,
             items,
             filtered: Vec::new(),
             search_query: String::new(),
@@ -338,7 +340,7 @@ impl ClipboardApp {
     }
 
     pub(crate) fn sync_page_to_selection(&mut self) {
-        let total_pages = page_count(self.filtered.len());
+        let total_pages = page_count(self.filtered.len(), self.config.page_size);
 
         if total_pages == 0 {
             self.page = 0;
@@ -349,13 +351,13 @@ impl ClipboardApp {
 
         if let Some(selected) = self.selected {
             if let Some(position) = self.filtered.iter().position(|index| *index == selected) {
-                self.page = position / PAGE_SIZE;
+                self.page = position / self.config.page_size;
             }
         }
     }
 
     pub(crate) fn change_page(&mut self, delta: isize) -> bool {
-        let total_pages = page_count(self.filtered.len());
+        let total_pages = page_count(self.filtered.len(), self.config.page_size);
         if total_pages == 0 {
             self.page = 0;
             self.selected = None;
@@ -366,7 +368,7 @@ impl ClipboardApp {
         let changed = next_page != self.page;
         self.page = next_page;
 
-        let visible = current_page_indices(&self.filtered, self.page);
+        let visible = current_page_indices(&self.filtered, self.page, self.config.page_size);
         if !self.selected.is_some_and(|index| visible.contains(&index)) {
             self.selected = visible.first().copied();
         }
@@ -375,7 +377,7 @@ impl ClipboardApp {
     }
 
     pub(crate) fn scroll_to_selection(&self) -> Task<Message> {
-        let visible = current_page_indices(&self.filtered, self.page);
+        let visible = current_page_indices(&self.filtered, self.page, self.config.page_size);
         let Some(selected) = self.selected else {
             return Task::none();
         };
@@ -404,12 +406,13 @@ impl ClipboardApp {
         self.page_image_errors.clear();
 
         let request_id = self.page_image_request;
-        let visible_images: Vec<(usize, String)> = current_page_indices(&self.filtered, self.page)
-            .iter()
-            .copied()
-            .filter(|index| self.items[*index].kind.is_image())
-            .map(|index| (index, self.items[index].line.clone()))
-            .collect();
+        let visible_images: Vec<(usize, String)> =
+            current_page_indices(&self.filtered, self.page, self.config.page_size)
+                .iter()
+                .copied()
+                .filter(|index| self.items[*index].kind.is_image())
+                .map(|index| (index, self.items[index].line.clone()))
+                .collect();
 
         if visible_images.is_empty() {
             return Task::none();

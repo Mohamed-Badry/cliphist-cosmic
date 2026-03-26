@@ -51,6 +51,24 @@ Run with vim bindings enabled:
 cargo run -- --vim
 ```
 
+### Command Line Options
+
+```text
+A Wayland clipboard manager
+
+Usage: cliphist-cosmic [OPTIONS]
+
+Options:
+      --vim                            Enable Vim keybindings
+      --width <WIDTH>                  Window width in pixels [default: 480]
+      --height <HEIGHT>                Window height in pixels [default: 560]
+      --page-size <PAGE_SIZE>          Number of items per page [default: 16]
+      --image-height <IMAGE_HEIGHT>    Image preview height in pixels [default: 116]
+      --preview-lines <PREVIEW_LINES>  Max preview lines for text entries [default: 4]
+      --preview-chars <PREVIEW_CHARS>  Max preview characters for text entries [default: 280]
+  -h, --help                           Print help
+```
+
 If you use `just`:
 
 ```bash
@@ -129,7 +147,7 @@ Launch with `--vim` to enable modal behavior.
 
 ## Current Behavior Notes
 
-- Window size is fixed at `480x560`.
+- Window size and preview limits are configurable via CLI arguments (see `--help`).
 - The window is undecorated and movable via the small top drag handle.
 - Search filtering uses cached filtered indices.
 - Image previews are decoded only for the visible page.

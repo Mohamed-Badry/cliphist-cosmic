@@ -1,6 +1,22 @@
-pub const WINDOW_WIDTH: f32 = 480.0;
-pub const WINDOW_HEIGHT: f32 = 560.0;
-pub const PAGE_SIZE: usize = 16;
-pub const IMAGE_HEIGHT: f32 = 116.0;
-pub const PREVIEW_LINE_LIMIT: usize = 4;
-pub const PREVIEW_CHAR_LIMIT: usize = 280;
+#[derive(Clone, Copy, Debug)]
+pub struct Config {
+    pub window_width: f32,
+    pub window_height: f32,
+    pub page_size: usize,
+    pub image_height: f32,
+    pub preview_line_limit: usize,
+    pub preview_char_limit: usize,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            window_width: 480.0,
+            window_height: 560.0,
+            page_size: 16,
+            image_height: 116.0,
+            preview_line_limit: 4,
+            preview_char_limit: 280,
+        }
+    }
+}

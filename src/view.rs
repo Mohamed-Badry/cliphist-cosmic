@@ -4,15 +4,14 @@ use cosmic::theme::Button as ButtonStyle;
 use cosmic::widget;
 
 use crate::app::ClipboardApp;
-use crate::config::IMAGE_HEIGHT;
 use crate::messages::{Message, VimMode};
 use crate::utils::{current_page_indices, page_count};
 
 impl ClipboardApp {
     pub fn content_view(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
-        let total_pages = page_count(self.filtered.len());
-        let visible = current_page_indices(&self.filtered, self.page);
+        let total_pages = page_count(self.filtered.len(), self.config.page_size);
+        let visible = current_page_indices(&self.filtered, self.page, self.config.page_size);
         let mode_badge = self.vim_mode.as_ref().map(mode_label);
 
         let drag_handle = widget::mouse_area(
@@ -133,7 +132,7 @@ impl ClipboardApp {
             let preview: Element<'_, Message> = match self.page_images.get(&index) {
                 Some(handle) => widget::image(handle.clone())
                     .width(Length::Fill)
-                    .height(Length::Fixed(IMAGE_HEIGHT))
+                    .height(Length::Fixed(self.config.image_height))
                     .content_fit(ContentFit::Contain)
                     .into(),
                 None => {
@@ -144,9 +143,9 @@ impl ClipboardApp {
 
                     widget::container(widget::text(message))
                         .width(Length::Fill)
-                        .height(Length::Fixed(IMAGE_HEIGHT))
+                        .height(Length::Fixed(self.config.image_height))
                         .center_x(Length::Fill)
-                        .center_y(Length::Fixed(IMAGE_HEIGHT))
+                        .center_y(Length::Fixed(self.config.image_height))
                         .into()
                 }
             };
@@ -159,10 +158,13 @@ impl ClipboardApp {
                 .on_press(Message::SelectAndActivate(index))
                 .into()
         } else {
-            let preview = widget::text(item.preview_text())
-                .width(Length::Fill)
-                .size(14)
-                .wrapping(cosmic::iced::widget::text::Wrapping::WordOrGlyph);
+            let preview = widget::text(item.preview_text(
+                self.config.preview_line_limit,
+                self.config.preview_char_limit,
+            ))
+            .width(Length::Fill)
+            .size(14)
+            .wrapping(cosmic::iced::widget::text::Wrapping::WordOrGlyph);
 
             widget::button::custom(widget::container(preview).width(Length::Fill))
                 .class(ButtonStyle::ListItem)

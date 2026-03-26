@@ -94,10 +94,13 @@ fn ignored_status_message(
         return None;
     }
 
-    if modifiers.control() && !modifiers.alt() && !modifiers.shift() && !modifiers.logo() {
-        if normalized_char(key) == Some('r') {
-            return Some(Message::Reload);
-        }
+    if modifiers.control()
+        && !modifiers.alt()
+        && !modifiers.shift()
+        && !modifiers.logo()
+        && normalized_char(key) == Some('r')
+    {
+        return Some(Message::Reload);
     }
 
     match key {

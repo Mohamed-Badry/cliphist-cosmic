@@ -56,14 +56,15 @@ impl ClipItem {
         })
     }
 
-    pub fn preview_text(&self) -> String {
-        compact_preview_text(&self.preview)
+    pub fn preview_text(&self, preview_line_limit: usize, preview_char_limit: usize) -> String {
+        compact_preview_text(&self.preview, preview_line_limit, preview_char_limit)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
 
     #[test]
     fn parses_cliphist_list_lines() {
@@ -98,11 +99,15 @@ mod tests {
 
     #[test]
     fn parse_rejects_invalid_lines_and_preview_text_is_compacted() {
+        let cfg = Config::default();
         assert_eq!(ClipItem::parse("missing-tab"), None);
 
         let item = ClipItem::parse("7\tline 1\nline 2\nline 3\nline 4\nline 5")
             .expect("expected parsed item");
         assert_eq!(item.id, "7");
-        assert!(item.preview_text().ends_with("..."));
+        assert!(
+            item.preview_text(cfg.preview_line_limit, cfg.preview_char_limit)
+                .ends_with("...")
+        );
     }
 }

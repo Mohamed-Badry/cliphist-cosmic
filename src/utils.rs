@@ -1,33 +1,35 @@
-use crate::config::{PAGE_SIZE, PREVIEW_CHAR_LIMIT, PREVIEW_LINE_LIMIT};
-
-pub fn current_page_indices(filtered: &[usize], page: usize) -> &[usize] {
+pub fn current_page_indices(filtered: &[usize], page: usize, page_size: usize) -> &[usize] {
     if filtered.is_empty() {
         return &filtered[0..0];
     }
 
-    let start = (page * PAGE_SIZE).min(filtered.len());
-    let end = (start + PAGE_SIZE).min(filtered.len());
+    let start = (page * page_size).min(filtered.len());
+    let end = (start + page_size).min(filtered.len());
     &filtered[start..end]
 }
 
-pub fn page_count(filtered_len: usize) -> usize {
-    filtered_len.div_ceil(PAGE_SIZE)
+pub fn page_count(filtered_len: usize, page_size: usize) -> usize {
+    filtered_len.div_ceil(page_size)
 }
 
-pub fn compact_preview_text(preview: &str) -> String {
+pub fn compact_preview_text(
+    preview: &str,
+    preview_line_limit: usize,
+    preview_char_limit: usize,
+) -> String {
     let lines: Vec<_> = preview
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .collect();
 
-    let truncated_by_lines = lines.len() > PREVIEW_LINE_LIMIT;
+    let truncated_by_lines = lines.len() > preview_line_limit;
     let mut compact = if lines.is_empty() {
         preview.trim().to_string()
     } else {
         lines
             .into_iter()
-            .take(PREVIEW_LINE_LIMIT)
+            .take(preview_line_limit)
             .collect::<Vec<_>>()
             .join("\n")
     };
@@ -36,9 +38,9 @@ pub fn compact_preview_text(preview: &str) -> String {
         return "(empty entry)".to_string();
     }
 
-    let truncated_by_chars = compact.chars().count() > PREVIEW_CHAR_LIMIT;
+    let truncated_by_chars = compact.chars().count() > preview_char_limit;
     if truncated_by_chars {
-        compact = compact.chars().take(PREVIEW_CHAR_LIMIT).collect();
+        compact = compact.chars().take(preview_char_limit).collect();
         compact = compact.trim_end().to_string();
     }
 
@@ -103,6 +105,7 @@ pub fn stderr_message(prefix: &str, stderr: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
 
     #[test]
     fn selection_moves_inside_filtered_results() {
@@ -118,40 +121,47 @@ mod tests {
 
     #[test]
     fn paging_slices_the_filtered_results() {
+        let cfg = Config::default();
         let filtered: Vec<_> = (0..45).collect();
-        assert_eq!(page_count(filtered.len()), 3);
-        assert_eq!(current_page_indices(&filtered, 0).len(), 16);
-        assert_eq!(current_page_indices(&filtered, 1).len(), 16);
-        assert_eq!(current_page_indices(&filtered, 2).len(), 13);
+        assert_eq!(page_count(filtered.len(), cfg.page_size), 3);
+        assert_eq!(current_page_indices(&filtered, 0, cfg.page_size).len(), 16);
+        assert_eq!(current_page_indices(&filtered, 1, cfg.page_size).len(), 16);
+        assert_eq!(current_page_indices(&filtered, 2, cfg.page_size).len(), 13);
     }
 
     #[test]
     fn paging_handles_empty_and_out_of_range_pages() {
+        let cfg = Config::default();
         let empty: Vec<usize> = Vec::new();
         let filtered: Vec<_> = (0..5).collect();
 
-        assert_eq!(page_count(empty.len()), 0);
-        assert!(current_page_indices(&empty, 0).is_empty());
-        assert!(current_page_indices(&filtered, 10).is_empty());
+        assert_eq!(page_count(empty.len(), cfg.page_size), 0);
+        assert!(current_page_indices(&empty, 0, cfg.page_size).is_empty());
+        assert!(current_page_indices(&filtered, 10, cfg.page_size).is_empty());
     }
 
     #[test]
     fn compact_preview_limits_large_entries() {
+        let cfg = Config::default();
         let preview = "line 1\nline 2\nline 3\nline 4\nline 5";
         assert_eq!(
-            compact_preview_text(preview),
+            compact_preview_text(preview, cfg.preview_line_limit, cfg.preview_char_limit),
             "line 1\nline 2\nline 3\nline 4..."
         );
     }
 
     #[test]
     fn compact_preview_handles_empty_and_char_truncation() {
-        assert_eq!(compact_preview_text("   \n  "), "(empty entry)");
+        let cfg = Config::default();
+        assert_eq!(
+            compact_preview_text("   \n  ", cfg.preview_line_limit, cfg.preview_char_limit),
+            "(empty entry)"
+        );
 
-        let long = "a".repeat(PREVIEW_CHAR_LIMIT + 10);
-        let compact = compact_preview_text(&long);
+        let long = "a".repeat(cfg.preview_char_limit + 10);
+        let compact = compact_preview_text(&long, cfg.preview_line_limit, cfg.preview_char_limit);
 
-        assert_eq!(compact.len(), PREVIEW_CHAR_LIMIT + 3);
+        assert_eq!(compact.len(), cfg.preview_char_limit + 3);
         assert!(compact.ends_with("..."));
     }
 
