@@ -792,7 +792,9 @@ name = "cliphist-cosmic"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "futures",
  "libcosmic",
+ "tokio",
 ]
 
 [[package]]

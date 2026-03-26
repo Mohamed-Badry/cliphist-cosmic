@@ -258,6 +258,11 @@ impl Application for ClipboardApp {
                 self.status = Some(err);
                 Task::none()
             }
+            Message::DeleteDone(Ok(())) => self.reload_history(),
+            Message::DeleteDone(Err(err)) => {
+                self.status = Some(err);
+                Task::none()
+            }
             Message::PageImagesLoaded { request_id, images } => {
                 if request_id != self.page_image_request {
                     return Task::none();
@@ -426,7 +431,7 @@ impl ClipboardApp {
         };
 
         self.status = Some("Copying...".to_string());
-        Task::perform(async move { copy_entry(&item) }, |res| {
+        Task::perform(async move { copy_entry(&item).await }, |res| {
             cosmic::Action::App(Message::CopyDone(res))
         })
     }
@@ -457,13 +462,10 @@ impl ClipboardApp {
             return Task::none();
         };
 
-        match delete_entry(&item.line) {
-            Ok(()) => self.reload_history(),
-            Err(err) => {
-                self.status = Some(err);
-                Task::none()
-            }
-        }
+        self.status = Some("Deleting...".to_string());
+        Task::perform(async move { delete_entry(&item.line).await }, |res| {
+            cosmic::Action::App(Message::DeleteDone(res))
+        })
     }
 }
 

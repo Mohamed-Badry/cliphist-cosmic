@@ -13,10 +13,10 @@ build-release:
     cargo build --release --locked
 
 run *args:
-    cargo run -- {{args}}
+    cargo run --release -- {{args}}
 
 run-vim *args:
-    cargo run -- --vim {{args}}
+    cargo run --release -- --vim {{args}}
 
 install:
     cargo install --path . --force --locked

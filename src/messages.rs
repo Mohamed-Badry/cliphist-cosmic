@@ -19,6 +19,7 @@ pub enum Message {
     HandleVimAction(VimAction),
     GlobalEscape,
     CopyDone(Result<(), String>),
+    DeleteDone(Result<(), String>),
     PageImagesLoaded {
         request_id: u64,
         images: Vec<(usize, Result<Vec<u8>, String>)>,

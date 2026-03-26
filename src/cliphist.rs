@@ -1,19 +1,21 @@
 use crate::models::ClipItem;
 use crate::utils::stderr_message;
-use std::io::Write;
-use std::process::{Command, Stdio};
+use futures::future::join_all;
+use std::process::Stdio;
+use tokio::io::AsyncWriteExt;
+use tokio::process::Command;
 
 pub async fn decode_page_images(
     entries: Vec<(usize, String)>,
 ) -> Vec<(usize, Result<Vec<u8>, String>)> {
-    entries
+    let futures = entries
         .into_iter()
-        .map(|(index, line)| (index, decode_entry(&line)))
-        .collect()
+        .map(|(index, line)| async move { (index, decode_entry(&line).await) });
+    join_all(futures).await
 }
 
 pub fn load_history() -> Result<Vec<ClipItem>, String> {
-    let output = Command::new("cliphist")
+    let output = std::process::Command::new("cliphist")
         .arg("list")
         .output()
         .map_err(|err| format!("Failed to run cliphist list: {err}"))?;
@@ -31,7 +33,7 @@ pub fn load_history() -> Result<Vec<ClipItem>, String> {
         .collect())
 }
 
-pub fn decode_entry(line: &str) -> Result<Vec<u8>, String> {
+pub async fn decode_entry(line: &str) -> Result<Vec<u8>, String> {
     let mut child = Command::new("cliphist")
         .arg("decode")
         .stdin(Stdio::piped())
@@ -48,12 +50,17 @@ pub fn decode_entry(line: &str) -> Result<Vec<u8>, String> {
 
         stdin
             .write_all(line.as_bytes())
-            .and_then(|_| stdin.write_all(b"\n"))
+            .await
+            .map_err(|err| format!("Failed to send cliphist decode input: {err}"))?;
+        stdin
+            .write_all(b"\n")
+            .await
             .map_err(|err| format!("Failed to send cliphist decode input: {err}"))?;
     }
 
     let output = child
         .wait_with_output()
+        .await
         .map_err(|err| format!("Failed to wait for cliphist decode: {err}"))?;
 
     if output.status.success() {
@@ -66,8 +73,8 @@ pub fn decode_entry(line: &str) -> Result<Vec<u8>, String> {
     }
 }
 
-pub fn copy_entry(item: &ClipItem) -> Result<(), String> {
-    let payload = decode_entry(&item.line)?;
+pub async fn copy_entry(item: &ClipItem) -> Result<(), String> {
+    let payload = decode_entry(&item.line).await?;
     let mut command = Command::new("wl-copy");
     if let Some(mime) = item.kind.mime_type() {
         command.arg("--type").arg(mime);
@@ -87,11 +94,13 @@ pub fn copy_entry(item: &ClipItem) -> Result<(), String> {
             .ok_or_else(|| "wl-copy did not expose a stdin pipe.".to_string())?;
         stdin
             .write_all(&payload)
+            .await
             .map_err(|err| format!("Failed to send clipboard payload to wl-copy: {err}"))?;
     }
 
     let status = child
         .wait()
+        .await
         .map_err(|err| format!("Failed to wait for wl-copy: {err}"))?;
 
     if status.success() {
@@ -101,7 +110,7 @@ pub fn copy_entry(item: &ClipItem) -> Result<(), String> {
     }
 }
 
-pub fn delete_entry(line: &str) -> Result<(), String> {
+pub async fn delete_entry(line: &str) -> Result<(), String> {
     let mut child = Command::new("cliphist")
         .arg("delete")
         .stdin(Stdio::piped())
@@ -117,12 +126,17 @@ pub fn delete_entry(line: &str) -> Result<(), String> {
             .ok_or_else(|| "cliphist delete did not expose a stdin pipe.".to_string())?;
         stdin
             .write_all(line.as_bytes())
-            .and_then(|_| stdin.write_all(b"\n"))
+            .await
+            .map_err(|err| format!("Failed to send cliphist delete input: {err}"))?;
+        stdin
+            .write_all(b"\n")
+            .await
             .map_err(|err| format!("Failed to send cliphist delete input: {err}"))?;
     }
 
     let output = child
         .wait_with_output()
+        .await
         .map_err(|err| format!("Failed to wait for cliphist delete: {err}"))?;
 
     if output.status.success() {
