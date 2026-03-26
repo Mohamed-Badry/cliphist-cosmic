@@ -53,7 +53,7 @@ impl Application for ClipboardApp {
     type Executor = executor::Default;
     type Flags = bool;
     type Message = Message;
-    const APP_ID: &'static str = "com.github.cliprs";
+    const APP_ID: &'static str = "com.github.cliphist_cosmic";
 
     fn core(&self) -> &Core {
         &self.core

@@ -1,8 +1,8 @@
-# cliprs Handoff
+# cliphist-cosmic Handoff
 
 ## Current State
 
-This repo is currently a `libcosmic` + `cliphist` Wayland clipboard picker implemented in [src/main.rs](/home/crim/Projects/cliprs/src/main.rs).
+This repo is currently a `libcosmic` + `cliphist` Wayland clipboard picker implemented in [src/main.rs](./src/main.rs).
 
 The current UI shape is:
 
@@ -43,19 +43,19 @@ These are the current issues to fix next:
 
 ### 1. Transparent Background
 
-The app is started with `.transparent(false)` in [src/main.rs](/home/crim/Projects/cliprs/src/main.rs#L922), but the main content is just a plain container. It likely needs an explicit themed/background container layer instead of relying on the default surface fill.
+The app is started with `.transparent(false)` in [src/main.rs](./src/main.rs#L922), but the main content is just a plain container. It likely needs an explicit themed/background container layer instead of relying on the default surface fill.
 
 Good first place to inspect:
 
-- [src/main.rs](/home/crim/Projects/cliprs/src/main.rs#L386)
+- [src/main.rs](./src/main.rs#L386)
 - `cosmic::widget::layer_container(...)` may be the right fix if it exists in this build
 
 ### 2. Clicking Entry Hangs
 
 Click currently triggers immediate copy:
 
-- [src/main.rs](/home/crim/Projects/cliprs/src/main.rs#L302)
-- [src/main.rs](/home/crim/Projects/cliprs/src/main.rs#L605)
+- [src/main.rs](./src/main.rs#L302)
+- [src/main.rs](./src/main.rs#L605)
 
 `copy_selected()` calls `decode_entry()` and then `wl-copy` synchronously on the UI path. That is the most likely reason the app freezes when an item is clicked.
 
@@ -69,8 +69,8 @@ Next fix should be:
 
 There are two current close paths:
 
-- `on_escape()` in [src/main.rs](/home/crim/Projects/cliprs/src/main.rs#L198)
-- unfocus handling in [src/main.rs](/home/crim/Projects/cliprs/src/main.rs#L206)
+- `on_escape()` in [src/main.rs](./src/main.rs#L198)
+- unfocus handling in [src/main.rs](./src/main.rs#L206)
 
 `Esc` likely is not reaching `on_escape()` consistently for this layer-surface/search-input setup, or focus is being consumed by the text input. If needed, add an explicit keyboard match for `Named::Escape` inside the subscription handler.
 
@@ -78,8 +78,8 @@ There are two current close paths:
 
 There are two current activation paths:
 
-- search input submit in [src/main.rs](/home/crim/Projects/cliprs/src/main.rs#L350)
-- keyboard subscription for `Named::Enter` in [src/main.rs](/home/crim/Projects/cliprs/src/main.rs#L227)
+- search input submit in [src/main.rs](./src/main.rs#L350)
+- keyboard subscription for `Named::Enter` in [src/main.rs](./src/main.rs#L227)
 
 Because the subscription only handles keys when `status == event::Status::Ignored`, `Enter` may be consumed by the text input and never reach app-level activation.
 
@@ -102,7 +102,7 @@ Likely fixes:
 
 The popup is currently configured as a layer surface in:
 
-- [src/main.rs](/home/crim/Projects/cliprs/src/main.rs#L737)
+- [src/main.rs](./src/main.rs#L737)
 
 Current settings:
 
@@ -139,7 +139,7 @@ Current tests cover:
 
 ## Practical Resume Point
 
-Resume from [src/main.rs](/home/crim/Projects/cliprs/src/main.rs#L240) and [src/main.rs](/home/crim/Projects/cliprs/src/main.rs#L605).
+Resume from [src/main.rs](./src/main.rs#L240) and [src/main.rs](./src/main.rs#L605).
 
 The first high-value patch should be:
 

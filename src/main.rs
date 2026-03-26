@@ -16,7 +16,7 @@ use cosmic::iced::Size;
 use config::{WINDOW_HEIGHT, WINDOW_WIDTH};
 
 #[derive(Parser, Debug)]
-#[command(name = "cliprs", about = "A Wayland clipboard manager")]
+#[command(name = "cliphist-cosmic", about = "A Wayland clipboard manager")]
 pub struct Cli {
     #[arg(long, help = "Enable Vim keybindings")]
     pub vim: bool,

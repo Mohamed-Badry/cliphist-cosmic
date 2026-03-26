@@ -1,54 +1,141 @@
-# cliprs
+# cliphist-cosmic
 
-A blazingly fast Wayland clipboard manager frontend built on `libcosmic` and `iced`. It provides a gorgeous, modern, unified layout designed to easily traverse, preview, and activate clipboard history streams generated from `cliphist`.
+`cliphist-cosmic` is a Wayland clipboard picker built with `libcosmic` and backed by `cliphist`.
 
-`cliprs` is designed for ultimate keyboard ergonomics, featuring standard search filters along with native **Vim Keybindings**. 
+The current app is a fixed-size clipboard browser with:
+
+- a single-pane paged list
+- a search box at the top
+- inline image previews
+- async clipboard activation and page-local image decoding
+- optional vim-style modal navigation with `--vim`
+- a small draggable handle so the undecorated window can still be moved
+
+The current implementation uses a normal fixed-size toplevel window instead of layer-shell. That is the tradeoff that makes mouse dragging possible.
+
+## Runtime Dependencies
+
+`cliphist-cosmic` expects these tools to be available at runtime:
+
+- `cliphist`
+- `wl-copy` from `wl-clipboard`
+- a Wayland session / compositor
+
+## Build Dependencies
+
+To build from source you need:
+
+- Rust and Cargo
+- `just` if you want the helper recipes in the `justfile`
+
+## Rust Dependencies
+
+Direct Cargo dependencies in this repo:
+
+- `clap`
+- `libcosmic`
+
+`libcosmic` brings in the `iced` stack used for UI and input handling.
 
 ## Usage
 
-Simply run `cliprs`. The window will automatically center on the active monitor as a polished layer-shell surface without distracting compositor borders. 
+Run the app directly:
 
-### CLI Arguments
+```bash
+cargo run
+```
 
-`cliprs` accepts standard CLI flags for configuration:
+Run with vim bindings enabled:
 
-| Flag | Description |
-|---|---|
-| `--vim` | Enables Vim Mode. Transforms standard clipboard execution into a modal experience featuring explicit `Normal` and `Insert` contexts. |
-| `--help`, `-h` | Prints help information and all available arguments. |
+```bash
+cargo run -- --vim
+```
 
-## Keybindings & Navigation
+If you use `just`:
 
-`cliprs` has two core control schemas.
+```bash
+just run
+just run-vim
+```
+
+## Installation
+
+The preferred install path for this repo now follows Cargo-managed binaries instead of copying into `~/.local/bin`.
+
+From the repository:
+
+```bash
+just install
+```
+
+That installs `cliphist-cosmic` the same way `cargo install --path .` does, which means it goes to Cargo's bin root by default, typically `~/.cargo/bin`.
+
+For local workflow testing with an isolated install root:
+
+```bash
+cargo install --path . --force --locked --root /tmp/cliphist-cosmic-root
+cargo uninstall --root /tmp/cliphist-cosmic-root cliphist-cosmic
+```
+
+Once the repo is pushed to GitHub, users can install directly from the repository source with Cargo:
+
+```bash
+cargo install --git <repo-url>
+```
+
+If a GitHub release installer script is added later, that should be a separate binary-install path for release artifacts instead of replacing the Cargo-managed install flow.
+
+## Just Recipes
+
+The repo includes a deliberately small `justfile`:
+
+- `just fmt`
+- `just test`
+- `just build-release`
+- `just run`
+- `just run-vim`
+- `just install`
+- `just uninstall`
+
+## Keybindings
 
 ### Default Mode
-By default, the clipboard remains heavily reliant on text-input filtering.
 
-- **Any text**: Types into the active search bar, instantly dropping the visual list to matched results.
-- **Up / Down Arrow**: Shifts the active selection smoothly.
-- **Left / Right Arrow**: Flips pages regardless of whether the search box has focus.
-- **PageUp / PageDown**: Shifts the list up or down by 16 items at a time without breaking search focus.
-- **Enter**: Instantly copies the selected item and securely closes the board.
-- **Ctrl+R**: Reloads standard history without dropping search variables.
-- **Delete**: Wipes the selected string precisely out of your `cliphist` record globally.
-- **Escape**: Closes the application.
+- typing filters the search box
+- `Up` / `Down` move selection
+- `Left` / `Right` change page
+- `PageUp` / `PageDown` change page
+- `Enter` copies the selected entry
+- `Ctrl+R` reloads history
+- `Delete` removes the selected entry from `cliphist`
+- `Esc` closes the app
 
-### Vim Mode (`--vim` flag)
+### Vim Mode
 
-When launched natively with `--vim`, the clipboard assumes a **Modal Context** standard to terminal multiplexers and vim buffers. The app initiates in **Normal Mode**, and **Insert Mode** is coupled directly to focus on the search box.
+Launch with `--vim` to enable modal behavior.
 
-#### Insert Mode
-Your keystrokes directly map into the search query textbox while it is focused.
-- **`<Esc>`**: Drops the app actively into **Normal Mode**, blurring the cursor.
-- **`jk`**: Rapidly typing `jk` (within 300ms delay) will instantly exit the textbox, deleting the sequence and flawlessly dumping you into **Normal Mode**. 
+- app starts in `Normal` mode
+- `Insert` mode is coupled to search-box focus
+- `i` or `/` enters `Insert`
+- `Esc` leaves `Insert` and returns to `Normal`
+- `jk` also leaves `Insert` when typed quickly
+- `j` / `k` move selection
+- `h` / `l` change page
+- `y` activates the current selection
+- `d` deletes the current selection
+- `r` reloads history
+- `q` closes the app
+- arrow keys, `Enter`, and page navigation remain globally available
 
-#### Normal Mode
-Global layout bindings. `j`, `k`, `r`, `d`, etc. no longer print into the search box, and instead manipulate the Wayland clipboard state directly!
-- **`j` / `k`**: Map selection visually Down and Up identically to arrows.
-- **`h` / `l`**: Map selection precisely across 16-item page barriers (h = Previous Page, l = Next Page).
-- **`d`**: Wipes the selection from clipboard history.
-- **`r`**: Reloads and parses cliphist.
-- **`y`**: "Yanks" the selection instantly simulating `Enter` copying execution.
-- **`i` / `/`**: Pushes the cursor explicitly back into the search box, returning securely into **Insert Mode**.
-- **`q`**: Shuts down the Wayland application cleanly.
-- **Left / Right / Up / Down / Enter / Del / Esc**: Standard mappings remain globally functional throughout both modes.
+## Current Behavior Notes
+
+- Window size is fixed at `480x560`.
+- The window is undecorated and movable via the small top drag handle.
+- Search filtering uses cached filtered indices.
+- Image previews are decoded only for the visible page.
+- Clipboard activation runs asynchronously so clicking and pressing `Enter` do not block the UI thread.
+
+## Project Notes
+
+- [CHANGELOG.md](./CHANGELOG.md) tracks the major implementation changes made so far.
+- Before publishing the repo, add a license and repository/homepage metadata once those are finalized.
