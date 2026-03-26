@@ -25,7 +25,6 @@ pub struct Cli {
 fn main() -> cosmic::iced::Result {
     let cli = Cli::parse();
     let settings = Settings::default()
-        .no_main_window(true)
         .size(Size::new(WINDOW_WIDTH, WINDOW_HEIGHT))
         .size_limits(
             Limits::NONE

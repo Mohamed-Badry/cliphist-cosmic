@@ -1,5 +1,5 @@
 use cosmic::Element;
-use cosmic::iced::{ContentFit, Length};
+use cosmic::iced::{ContentFit, Length, mouse};
 use cosmic::theme::Button as ButtonStyle;
 use cosmic::widget;
 
@@ -13,10 +13,22 @@ impl ClipboardApp {
         let spacing = cosmic::theme::spacing();
         let total_pages = page_count(self.filtered.len());
         let visible = current_page_indices(&self.filtered, self.page);
-        let mode_badge = self.vim_mode.as_ref().map(|mode| match mode {
-            VimMode::Normal => "[NORMAL]",
-            VimMode::Insert { .. } => "[INSERT]",
-        });
+        let mode_badge = self.vim_mode.as_ref().map(mode_label);
+
+        let drag_handle = widget::mouse_area(
+            widget::container(
+                widget::container(widget::text(""))
+                    .width(Length::Fixed(44.0))
+                    .height(Length::Fixed(4.0))
+                    .class(cosmic::theme::Container::Secondary),
+            )
+            .width(Length::Fill)
+            .height(Length::Fixed(16.0))
+            .center_x(Length::Fill)
+            .center_y(Length::Fixed(16.0)),
+        )
+        .on_drag(Message::DragWindow)
+        .interaction(mouse::Interaction::Grab);
 
         let search = widget::text_input::search_input("Search clipboard", &self.search_query)
             .on_input(Message::SearchChanged)
@@ -27,17 +39,7 @@ impl ClipboardApp {
             .width(Length::Fill);
 
         let search_row = {
-            let mut row = widget::row().spacing(spacing.space_s).push(search);
-
-            if let Some(label) = mode_badge {
-                row = row.push(
-                    widget::container(widget::text(label).size(12))
-                        .padding([spacing.space_xxs, spacing.space_s])
-                        .class(cosmic::theme::Container::Secondary),
-                );
-            }
-
-            row.push(
+            widget::row().spacing(spacing.space_s).push(search).push(
                 widget::container(
                     widget::button::custom(widget::text(""))
                         .on_press(Message::NoOp)
@@ -62,6 +64,17 @@ impl ClipboardApp {
             format!("Page {}/{}", self.page + 1, total_pages)
         };
 
+        let mut info_row = widget::row().spacing(spacing.space_s);
+        info_row = info_row.push(widget::text(results_label).size(13));
+
+        if let Some(label) = mode_badge {
+            info_row = info_row.push(mode_badge_chip(label));
+        }
+
+        info_row = info_row
+            .push(widget::space::horizontal())
+            .push(widget::text(page_label).size(13));
+
         let mut list = widget::column().spacing(spacing.space_s);
         for index in visible.iter().copied() {
             list = list.push(self.render_item(index));
@@ -78,36 +91,37 @@ impl ClipboardApp {
 
         let status_text = self.status.clone().unwrap_or_else(|| {
             if self.vim_mode.is_some() {
-                "j/k move | h/l or Left/Right page | i or / focuses search | Esc leaves Insert or closes"
-                    .to_string()
+                "Drag top handle to move | j/k move | h/l or Left/Right page | i or / focuses search | Esc leaves Insert or closes".to_string()
             } else {
-                "Enter copies | Page Up/Down switches page | Esc closes".to_string()
+                "Drag top handle to move | Enter copies | Page Up/Down switches page | Esc closes"
+                    .to_string()
             }
         });
 
         let content = widget::container(
             widget::column()
-                .spacing(spacing.space_m)
-                .padding([spacing.space_m, spacing.space_l])
-                .push(search_row)
+                .height(Length::Fill)
+                .push(drag_handle)
                 .push(
-                    widget::row()
-                        .push(widget::text(results_label).size(13))
-                        .push(widget::space::horizontal())
-                        .push(widget::text(page_label).size(13)),
-                )
-                .push(
-                    widget::scrollable(list)
-                        .id(self.list_id.clone())
-                        .height(Length::Fill),
-                )
-                .push(widget::text(status_text).size(12)),
+                    widget::column()
+                        .height(Length::Fill)
+                        .spacing(spacing.space_m)
+                        .padding([spacing.space_m, spacing.space_l])
+                        .push(search_row)
+                        .push(info_row)
+                        .push(
+                            widget::scrollable(list)
+                                .id(self.list_id.clone())
+                                .height(Length::Fill),
+                        )
+                        .push(widget::text(status_text).size(12)),
+                ),
         )
         .width(Length::Fill)
         .height(Length::Fill)
         .class(cosmic::theme::Container::Background);
 
-        widget::layer_container(content).into()
+        content.into()
     }
 
     pub fn render_item(&self, index: usize) -> Element<'_, Message> {
@@ -159,4 +173,21 @@ impl ClipboardApp {
                 .into()
         }
     }
+}
+
+fn mode_label(mode: &VimMode) -> &'static str {
+    match mode {
+        VimMode::Normal => "NORMAL",
+        VimMode::Insert { .. } => "INSERT",
+    }
+}
+
+fn mode_badge_chip(label: &str) -> Element<'_, Message> {
+    widget::container(widget::text(label).size(12))
+        .padding([
+            cosmic::theme::spacing().space_xxxs,
+            cosmic::theme::spacing().space_xs,
+        ])
+        .class(cosmic::theme::Container::Secondary)
+        .into()
 }

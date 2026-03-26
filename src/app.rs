@@ -1,21 +1,15 @@
 use std::collections::HashMap;
 
 use cosmic::app::{Core, Task};
-use cosmic::iced::platform_specific::runtime::wayland::layer_surface::{
-    IcedMargin, SctkLayerSurfaceSettings,
-};
-use cosmic::iced::platform_specific::shell::commands::layer_surface::{
-    Anchor, KeyboardInteractivity, Layer, get_layer_surface,
-};
+use cosmic::iced::Subscription;
 use cosmic::iced::widget::scrollable::RelativeOffset;
-use cosmic::iced::{Limits, Subscription};
 use cosmic::widget;
-use cosmic::{Application, Element, executor};
+use cosmic::{Application, ApplicationExt, Element, executor};
 use std::time::Duration;
 use std::time::Instant;
 
 use crate::cliphist::{copy_entry, decode_page_images, delete_entry, load_history};
-use crate::config::{PAGE_SIZE, WINDOW_HEIGHT, WINDOW_TOP_MARGIN, WINDOW_WIDTH};
+use crate::config::PAGE_SIZE;
 use crate::messages::{Message, VimMode};
 use crate::models::ClipItem;
 use crate::utils::{current_page_indices, next_selected_index, page_count};
@@ -77,7 +71,6 @@ impl Application for ClipboardApp {
         core.window.show_minimize = false;
         core.window.show_close = false;
 
-        let surface_id = cosmic::iced::window::Id::unique();
         let search_id = widget::Id::unique();
         let dummy_id = widget::Id::unique();
         let list_id = widget::Id::unique();
@@ -116,15 +109,7 @@ impl Application for ClipboardApp {
         let scroll = app.scroll_to_selection();
         let image_task = app.load_visible_images();
 
-        (
-            app,
-            Task::batch([
-                layer_surface_task(surface_id),
-                focus_task,
-                scroll,
-                image_task,
-            ]),
-        )
+        (app, Task::batch([focus_task, scroll, image_task]))
     }
 
     fn on_escape(&mut self) -> Task<Self::Message> {
@@ -142,6 +127,7 @@ impl Application for ClipboardApp {
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
         match message {
             Message::NoOp => Task::none(),
+            Message::DragWindow => self.drag(),
             Message::EnterNormalMode => {
                 if let Some(VimMode::Insert { .. }) = self.vim_mode {
                     self.vim_mode = Some(VimMode::Normal);
@@ -479,28 +465,6 @@ impl ClipboardApp {
             }
         }
     }
-}
-
-pub fn layer_surface_task(surface_id: cosmic::iced::window::Id) -> Task<Message> {
-    let mut surface = SctkLayerSurfaceSettings::default();
-    surface.id = surface_id;
-    surface.layer = Layer::Overlay;
-    surface.keyboard_interactivity = KeyboardInteractivity::OnDemand;
-    surface.anchor = Anchor::TOP;
-    surface.margin = IcedMargin {
-        top: WINDOW_TOP_MARGIN,
-        ..IcedMargin::default()
-    };
-    surface.namespace = "cliprs".to_string();
-    surface.size = Some((Some(WINDOW_WIDTH as u32), Some(WINDOW_HEIGHT as u32)));
-    surface.exclusive_zone = 0;
-    surface.size_limits = Limits::NONE
-        .min_width(WINDOW_WIDTH)
-        .max_width(WINDOW_WIDTH)
-        .min_height(WINDOW_HEIGHT)
-        .max_height(WINDOW_HEIGHT);
-
-    get_layer_surface(surface)
 }
 
 fn initial_vim_mode(is_vim: bool) -> Option<VimMode> {

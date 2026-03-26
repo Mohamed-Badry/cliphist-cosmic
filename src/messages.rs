@@ -3,6 +3,7 @@ use std::time::Instant;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Message {
     NoOp,
+    DragWindow,
     SearchChanged(String),
     ClearSearch,
     MoveSelection(i32),
