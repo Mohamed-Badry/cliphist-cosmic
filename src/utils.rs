@@ -126,11 +126,42 @@ mod tests {
     }
 
     #[test]
+    fn paging_handles_empty_and_out_of_range_pages() {
+        let empty: Vec<usize> = Vec::new();
+        let filtered: Vec<_> = (0..5).collect();
+
+        assert_eq!(page_count(empty.len()), 0);
+        assert!(current_page_indices(&empty, 0).is_empty());
+        assert!(current_page_indices(&filtered, 10).is_empty());
+    }
+
+    #[test]
     fn compact_preview_limits_large_entries() {
         let preview = "line 1\nline 2\nline 3\nline 4\nline 5";
         assert_eq!(
             compact_preview_text(preview),
             "line 1\nline 2\nline 3\nline 4..."
         );
+    }
+
+    #[test]
+    fn compact_preview_handles_empty_and_char_truncation() {
+        assert_eq!(compact_preview_text("   \n  "), "(empty entry)");
+
+        let long = "a".repeat(PREVIEW_CHAR_LIMIT + 10);
+        let compact = compact_preview_text(&long);
+
+        assert_eq!(compact.len(), PREVIEW_CHAR_LIMIT + 3);
+        assert!(compact.ends_with("..."));
+    }
+
+    #[test]
+    fn html_detection_and_stderr_helpers_cover_edge_cases() {
+        assert!(looks_like_html("<body>hello</body>"));
+        assert!(looks_like_html("<img src=\"x\">"));
+        assert!(!looks_like_html("plain text"));
+
+        assert_eq!(stderr_message("prefix", ""), "prefix");
+        assert_eq!(stderr_message("prefix", "stderr"), "prefix: stderr");
     }
 }

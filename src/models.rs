@@ -83,4 +83,26 @@ mod tests {
         );
         assert_eq!(ClipKind::from_preview("plain text"), ClipKind::Text);
     }
+
+    #[test]
+    fn mime_types_and_image_detection_match_kind() {
+        assert_eq!(ClipKind::Text.mime_type(), None);
+        assert_eq!(ClipKind::Html.mime_type(), Some("text/html"));
+        assert_eq!(
+            ClipKind::Binary("image/png".to_string()).mime_type(),
+            Some("image/png")
+        );
+        assert!(ClipKind::Binary("image/png".to_string()).is_image());
+        assert!(!ClipKind::Binary("application/pdf".to_string()).is_image());
+    }
+
+    #[test]
+    fn parse_rejects_invalid_lines_and_preview_text_is_compacted() {
+        assert_eq!(ClipItem::parse("missing-tab"), None);
+
+        let item = ClipItem::parse("7\tline 1\nline 2\nline 3\nline 4\nline 5")
+            .expect("expected parsed item");
+        assert_eq!(item.id, "7");
+        assert!(item.preview_text().ends_with("..."));
+    }
 }

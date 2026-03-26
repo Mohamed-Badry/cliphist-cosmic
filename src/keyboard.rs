@@ -242,6 +242,77 @@ mod tests {
     }
 
     #[test]
+    fn ignored_navigation_keys_still_work_while_search_has_focus() {
+        assert_eq!(
+            key_message(
+                Key::Named(Named::PageUp),
+                Key::Named(Named::PageUp),
+                keyboard::Modifiers::empty(),
+                ignored(),
+            ),
+            Some(Message::PrevPage)
+        );
+        assert_eq!(
+            key_message(
+                Key::Named(Named::PageDown),
+                Key::Named(Named::PageDown),
+                keyboard::Modifiers::empty(),
+                ignored(),
+            ),
+            Some(Message::NextPage)
+        );
+        assert_eq!(
+            key_message(
+                Key::Named(Named::Home),
+                Key::Named(Named::Home),
+                keyboard::Modifiers::empty(),
+                ignored(),
+            ),
+            Some(Message::MoveSelection(i32::MIN))
+        );
+        assert_eq!(
+            key_message(
+                Key::Named(Named::End),
+                Key::Named(Named::End),
+                keyboard::Modifiers::empty(),
+                ignored(),
+            ),
+            Some(Message::MoveSelection(i32::MAX))
+        );
+    }
+
+    #[test]
+    fn delete_requires_ignored_status_without_extra_modifiers() {
+        assert_eq!(
+            key_message(
+                Key::Named(Named::Delete),
+                Key::Named(Named::Delete),
+                keyboard::Modifiers::empty(),
+                ignored(),
+            ),
+            Some(Message::DeleteSelected)
+        );
+        assert_eq!(
+            key_message(
+                Key::Named(Named::Delete),
+                Key::Named(Named::Delete),
+                keyboard::Modifiers::SHIFT,
+                ignored(),
+            ),
+            None
+        );
+        assert_eq!(
+            key_message(
+                Key::Named(Named::Delete),
+                Key::Named(Named::Delete),
+                keyboard::Modifiers::empty(),
+                captured(),
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn reload_shortcut_uses_logical_key_when_event_is_ignored() {
         assert_eq!(
             key_message(

@@ -20,6 +20,24 @@ use crate::messages::{Message, VimMode};
 use crate::models::ClipItem;
 use crate::utils::{current_page_indices, next_selected_index, page_count};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FocusTarget {
+    SearchInput,
+    ModeSink,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum SearchChangeAction {
+    Ignore,
+    Apply {
+        query: String,
+        next_last_j: Option<Instant>,
+    },
+    ExitInsert {
+        trimmed_query: String,
+    },
+}
+
 pub struct ClipboardApp {
     pub(crate) core: Core,
     pub(crate) items: Vec<ClipItem>,
@@ -68,7 +86,7 @@ impl Application for ClipboardApp {
             Err(err) => (Vec::new(), Some(err)),
         };
 
-        let vim_mode = if is_vim { Some(VimMode::Normal) } else { None };
+        let vim_mode = initial_vim_mode(is_vim);
 
         let mut app = Self {
             core,
@@ -89,11 +107,11 @@ impl Application for ClipboardApp {
 
         app.rebuild_filtered(None);
 
-        let focus_task = if matches!(app.vim_mode, Some(VimMode::Normal)) {
-            widget::button::focus(app.dummy_id.clone())
-        } else {
-            widget::text_input::focus(app.search_id.clone())
-        };
+        let focus_task = focus_task_for_mode(
+            focus_target_for_mode(app.vim_mode.as_ref()),
+            app.search_id.clone(),
+            app.dummy_id.clone(),
+        );
 
         let scroll = app.scroll_to_selection();
         let image_task = app.load_visible_images();
@@ -127,7 +145,11 @@ impl Application for ClipboardApp {
             Message::EnterNormalMode => {
                 if let Some(VimMode::Insert { .. }) = self.vim_mode {
                     self.vim_mode = Some(VimMode::Normal);
-                    Task::batch([widget::button::focus(self.dummy_id.clone())])
+                    focus_task_for_mode(
+                        FocusTarget::ModeSink,
+                        self.search_id.clone(),
+                        self.dummy_id.clone(),
+                    )
                 } else {
                     Task::none()
                 }
@@ -135,59 +157,56 @@ impl Application for ClipboardApp {
             Message::EnterInsertMode => {
                 if let Some(VimMode::Normal) = self.vim_mode {
                     self.vim_mode = Some(VimMode::Insert { last_j: None });
-                    Task::batch([
-                        widget::text_input::focus(self.search_id.clone()),
-                        widget::text_input::move_cursor_to_end(self.search_id.clone()),
-                    ])
+                    focus_task_for_mode(
+                        FocusTarget::SearchInput,
+                        self.search_id.clone(),
+                        self.dummy_id.clone(),
+                    )
                 } else {
                     Task::none()
                 }
             }
-            Message::GlobalEscape => {
-                if let Some(VimMode::Insert { .. }) = self.vim_mode {
-                    self.update(Message::EnterNormalMode)
-                } else {
-                    self.update(Message::CloseWindow)
-                }
-            }
+            Message::GlobalEscape => self.update(escape_outcome(self.vim_mode.as_ref())),
             Message::HandleVimAction(action) => self.handle_vim_action(action),
             Message::SearchChanged(query) => {
-                if let Some(VimMode::Normal) = self.vim_mode {
-                    return Task::none();
-                }
-
-                if let Some(VimMode::Insert { last_j }) = &mut self.vim_mode {
-                    if query.ends_with("jk")
-                        && let Some(j_time) = last_j
-                        && Instant::now().duration_since(*j_time) < Duration::from_millis(300)
-                    {
-                        self.search_query = query[..query.len() - 2].to_string();
+                match search_change_action(self.vim_mode.as_ref(), &query, Instant::now()) {
+                    SearchChangeAction::Ignore => Task::none(),
+                    SearchChangeAction::ExitInsert { trimmed_query } => {
+                        self.search_query = trimmed_query;
                         self.vim_mode = Some(VimMode::Normal);
                         self.status = None;
                         self.rebuild_filtered(None);
-                        return Task::batch([
-                            widget::button::focus(self.dummy_id.clone()),
+                        Task::batch([
+                            focus_task_for_mode(
+                                FocusTarget::ModeSink,
+                                self.search_id.clone(),
+                                self.dummy_id.clone(),
+                            ),
                             self.scroll_to_selection(),
                             self.load_visible_images(),
-                        ]);
+                        ])
                     }
-                    if query.ends_with('j') {
-                        *last_j = Some(Instant::now());
-                    } else {
-                        *last_j = None;
+                    SearchChangeAction::Apply { query, next_last_j } => {
+                        if let Some(VimMode::Insert { last_j }) = &mut self.vim_mode {
+                            *last_j = next_last_j;
+                        }
+
+                        self.search_query = query;
+                        self.status = None;
+                        self.rebuild_filtered(None);
+                        let image_task = self.load_visible_images();
+
+                        Task::batch([
+                            focus_task_for_mode(
+                                FocusTarget::SearchInput,
+                                self.search_id.clone(),
+                                self.dummy_id.clone(),
+                            ),
+                            self.scroll_to_selection(),
+                            image_task,
+                        ])
                     }
                 }
-
-                self.search_query = query;
-                self.status = None;
-                self.rebuild_filtered(None);
-                let image_task = self.load_visible_images();
-
-                Task::batch([
-                    widget::text_input::focus(self.search_id.clone()),
-                    self.scroll_to_selection(),
-                    image_task,
-                ])
             }
             Message::ClearSearch => {
                 self.search_query.clear();
@@ -196,7 +215,11 @@ impl Application for ClipboardApp {
                 let image_task = self.load_visible_images();
 
                 Task::batch([
-                    widget::text_input::focus(self.search_id.clone()),
+                    focus_task_for_mode(
+                        FocusTarget::SearchInput,
+                        self.search_id.clone(),
+                        self.dummy_id.clone(),
+                    ),
                     self.scroll_to_selection(),
                     image_task,
                 ])
@@ -478,4 +501,174 @@ pub fn layer_surface_task(surface_id: cosmic::iced::window::Id) -> Task<Message>
         .max_height(WINDOW_HEIGHT);
 
     get_layer_surface(surface)
+}
+
+fn initial_vim_mode(is_vim: bool) -> Option<VimMode> {
+    if is_vim { Some(VimMode::Normal) } else { None }
+}
+
+fn focus_target_for_mode(vim_mode: Option<&VimMode>) -> FocusTarget {
+    if matches!(vim_mode, Some(VimMode::Normal)) {
+        FocusTarget::ModeSink
+    } else {
+        FocusTarget::SearchInput
+    }
+}
+
+fn focus_task_for_mode(
+    target: FocusTarget,
+    search_id: widget::Id,
+    dummy_id: widget::Id,
+) -> Task<Message> {
+    match target {
+        FocusTarget::SearchInput => Task::batch([
+            widget::text_input::focus(search_id.clone()),
+            widget::text_input::move_cursor_to_end(search_id),
+        ]),
+        FocusTarget::ModeSink => widget::button::focus(dummy_id),
+    }
+}
+
+fn escape_outcome(vim_mode: Option<&VimMode>) -> Message {
+    if matches!(vim_mode, Some(VimMode::Insert { .. })) {
+        Message::EnterNormalMode
+    } else {
+        Message::CloseWindow
+    }
+}
+
+fn search_change_action(
+    vim_mode: Option<&VimMode>,
+    query: &str,
+    now: Instant,
+) -> SearchChangeAction {
+    match vim_mode {
+        Some(VimMode::Normal) => SearchChangeAction::Ignore,
+        Some(VimMode::Insert { last_j })
+            if query.ends_with("jk")
+                && last_j.is_some_and(|j_time| {
+                    now.duration_since(j_time) < Duration::from_millis(300)
+                }) =>
+        {
+            SearchChangeAction::ExitInsert {
+                trimmed_query: query[..query.len() - 2].to_string(),
+            }
+        }
+        Some(VimMode::Insert { .. }) => SearchChangeAction::Apply {
+            query: query.to_string(),
+            next_last_j: query.ends_with('j').then_some(now),
+        },
+        None => SearchChangeAction::Apply {
+            query: query.to_string(),
+            next_last_j: None,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vim_mode_starts_in_normal_when_enabled() {
+        assert_eq!(initial_vim_mode(true), Some(VimMode::Normal));
+        assert_eq!(initial_vim_mode(false), None);
+    }
+
+    #[test]
+    fn focus_target_tracks_mode() {
+        assert_eq!(
+            focus_target_for_mode(Some(&VimMode::Normal)),
+            FocusTarget::ModeSink
+        );
+        assert_eq!(
+            focus_target_for_mode(Some(&VimMode::Insert { last_j: None })),
+            FocusTarget::SearchInput
+        );
+        assert_eq!(focus_target_for_mode(None), FocusTarget::SearchInput);
+    }
+
+    #[test]
+    fn escape_leaves_insert_before_closing() {
+        assert_eq!(
+            escape_outcome(Some(&VimMode::Insert { last_j: None })),
+            Message::EnterNormalMode
+        );
+        assert_eq!(escape_outcome(Some(&VimMode::Normal)), Message::CloseWindow);
+        assert_eq!(escape_outcome(None), Message::CloseWindow);
+    }
+
+    #[test]
+    fn normal_mode_ignores_search_changes() {
+        let now = Instant::now();
+        assert_eq!(
+            search_change_action(Some(&VimMode::Normal), "hello", now),
+            SearchChangeAction::Ignore
+        );
+    }
+
+    #[test]
+    fn insert_mode_tracks_j_for_jk_escape() {
+        let now = Instant::now();
+        assert_eq!(
+            search_change_action(Some(&VimMode::Insert { last_j: None }), "j", now),
+            SearchChangeAction::Apply {
+                query: "j".to_string(),
+                next_last_j: Some(now),
+            }
+        );
+        assert_eq!(
+            search_change_action(
+                Some(&VimMode::Insert { last_j: Some(now) }),
+                "hello",
+                now + Duration::from_millis(100),
+            ),
+            SearchChangeAction::Apply {
+                query: "hello".to_string(),
+                next_last_j: None,
+            }
+        );
+    }
+
+    #[test]
+    fn jk_exits_insert_mode_only_within_threshold() {
+        let now = Instant::now();
+        assert_eq!(
+            search_change_action(
+                Some(&VimMode::Insert {
+                    last_j: Some(now - Duration::from_millis(100)),
+                }),
+                "abcjk",
+                now,
+            ),
+            SearchChangeAction::ExitInsert {
+                trimmed_query: "abc".to_string(),
+            }
+        );
+        assert_eq!(
+            search_change_action(
+                Some(&VimMode::Insert {
+                    last_j: Some(now - Duration::from_millis(400)),
+                }),
+                "abcjk",
+                now,
+            ),
+            SearchChangeAction::Apply {
+                query: "abcjk".to_string(),
+                next_last_j: None,
+            }
+        );
+    }
+
+    #[test]
+    fn non_vim_search_changes_apply_without_insert_state() {
+        let now = Instant::now();
+        assert_eq!(
+            search_change_action(None, "term", now),
+            SearchChangeAction::Apply {
+                query: "term".to_string(),
+                next_last_j: None,
+            }
+        );
+    }
 }
