@@ -7,6 +7,7 @@ A Wayland clipboard picker built with [libcosmic](https://github.com/pop-os/libc
 - Async clipboard activation — no UI blocking
 - Optional Vim-style modal navigation (`--vim`)
 - Mouse menu: reload, delete, or wipe history
+- Inherits COSMIC theme colors instead of shipping a separate look
 - Switchable startup surface mode: draggable window or fixed-position layer surface
 - Configurable window size, page size, and preview limits
 
@@ -17,6 +18,35 @@ This project was built with heavy AI assistance.
 Not in the polished "AI helped with boilerplate" sense. More in the "two guys and a probabilistic autocomplete walked into a Wayland bug" sense.
 
 There is some engineering in here, but there is also a non-zero amount of borderline vibe coding. Read the code, trust the tests, and if something looks cursed, assume the compositor, the model, or both were involved.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center" colspan="1" width="34%">
+      <img src="assets/cliphist-cosmic-preview.png" alt="Default clipboard picker window" width="100%">
+      <br>
+      <sub>Default window mode close-up</sub>
+    </td>
+    <td align="center" colspan="3" width="75%">
+      <img src="assets/cliphist-cosmic-preview-full-screen.png" alt="Clipboard picker shown over a full desktop workspace" width="100%">
+      <br>
+      <sub>Full desktop context</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2" width="50%">
+      <img src="assets/cliphist-cosmic-preview-top-right.png" alt="Clipboard picker opened in the top-right corner" width="100%">
+      <br>
+      <sub>Layer mode with <code>--position top-right</code></sub>
+    </td>
+    <td align="center" colspan="2" width="50%">
+      <img src="assets/cliphist-cosmic-preview-horizontal.png" alt="Clipboard picker in a wider horizontal configuration" width="100%">
+      <br>
+      <sub>Wider horizontal layout</sub>
+    </td>
+  </tr>
+</table>
 
 ## Requirements
 
