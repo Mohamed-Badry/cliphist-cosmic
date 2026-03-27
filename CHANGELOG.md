@@ -2,7 +2,16 @@
 
 This file tracks the major changes made to the current `cliphist-cosmic` tree compared with the earlier prototype.
 
-## Surface Modes And Placement
+## 0.1.0 - 2026-03-27
+
+### Release Cleanup
+
+- Confirmed the crate version for the first public release as `0.1.0`.
+- Added a real `--version` CLI flag so installs can be verified after release.
+- Synced the README CLI reference with the current `--help` output.
+- Removed an unused config helper so `cargo run -- --help` no longer emits a local warning before printing help.
+
+### Surface Modes And Placement
 
 - Added explicit startup surface selection with `--surface window|layer`.
 - Kept `window` mode as the default so the picker still behaves like a normal draggable COSMIC window.
@@ -24,7 +33,7 @@ This file tracks the major changes made to the current `cliphist-cosmic` tree co
 - Added layer-unfocus close handling so the layer-surface picker still behaves like a transient launcher.
 - Documented why this is split into two modes: Wayland compositors control placement for normal toplevel windows, while layer surfaces can request anchored placement but do not behave like normal movable windows.
 
-## UI And Windowing
+### UI And Windowing
 
 - Replaced the older two-pane layout with a single-pane paged list.
 - Moved image previews inline into the main list instead of showing them in a separate side panel.
@@ -37,7 +46,7 @@ This file tracks the major changes made to the current `cliphist-cosmic` tree co
 - Moved the vim mode indicator into the main info row to reduce wasted header space.
 - Implemented a PID-based toggle mechanism to allow opening/closing the app with the same shortcut.
 
-## Clipboard And Data Flow
+### Clipboard And Data Flow
 
 - Kept `cliphist list` as the source of clipboard history.
 - Kept `cliphist delete` for removing entries.
@@ -50,7 +59,7 @@ This file tracks the major changes made to the current `cliphist-cosmic` tree co
 - Added async page image loading through `PageImagesLoaded`.
 - Truncated large text previews before layout so oversized clipboard entries do not bloat rendering.
 
-## Keyboard And Vim Mode
+### Keyboard And Vim Mode
 
 - Added `--vim` startup support.
 - Reconciled vim behavior across `keyboard`, `app`, `view`, and `vim` modules.
@@ -62,14 +71,14 @@ This file tracks the major changes made to the current `cliphist-cosmic` tree co
 - Kept `Left` / `Right` page navigation global regardless of mode.
 - Added a visible mode indicator in the UI.
 
-## Reliability And Tests
+### Reliability And Tests
 
 - Added broader tests around vim mode startup, focus selection, escape behavior, and `jk` timing.
 - Added keyboard mapping tests for logical key handling and global bindings.
 - Added helper tests for paging, preview truncation, HTML detection, and parsing/model behavior.
 - Current test suite passes with `cargo test`.
 
-## Build And Tooling
+### Build And Tooling
 
 - Added a `justfile` for local build, run, and install flows.
 - Expanded the `justfile` with `lint`, `dev`, and `run-horizontal` recipes.

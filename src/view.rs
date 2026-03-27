@@ -327,7 +327,8 @@ fn shortcut_footer<'a>(status: Option<&'a str>, vim_mode: bool) -> Element<'a, M
         .spacing(spacing.space_xxs)
         .extend(
             shortcuts
-                .into_iter()
+                .iter()
+                .copied()
                 .map(|(keys, label)| shortcut_chip(keys, label)),
         )
         .wrap()

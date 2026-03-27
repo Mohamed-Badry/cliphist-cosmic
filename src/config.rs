@@ -99,10 +99,6 @@ impl Config {
         self.surface_mode == SurfaceMode::Layer
     }
 
-    pub fn allows_mouse_drag(self) -> bool {
-        self.surface_mode == SurfaceMode::Window
-    }
-
     pub fn layer_surface_task<Message: 'static>(self) -> Task<Message> {
         if !self.uses_layer_surface() {
             return Task::none();
@@ -182,9 +178,9 @@ mod tests {
     }
 
     #[test]
-    fn window_mode_keeps_drag_enabled() {
+    fn window_mode_uses_toplevel_surface() {
         let config = Config::default();
         assert!(!config.uses_layer_surface());
-        assert!(config.allows_mouse_drag());
+        assert_eq!(config.surface_mode, SurfaceMode::Window);
     }
 }

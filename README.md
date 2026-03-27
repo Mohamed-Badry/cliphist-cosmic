@@ -67,6 +67,8 @@ Use `--no-toggle` to disable this behavior and always start a new instance.
 ## CLI Options
 
 ```text
+A Wayland clipboard picker
+
 Usage: cliphist-cosmic [OPTIONS]
 
 Options:
@@ -83,6 +85,7 @@ Options:
       --x <X>                          Layer-surface absolute X coordinate in pixels
       --y <Y>                          Layer-surface absolute Y coordinate in pixels
   -h, --help                           Print help
+  -V, --version                        Print version
 ```
 
 Placement flags require `--surface layer`. `--x` and `--y` override `--position`.
@@ -132,7 +135,7 @@ Arrow keys, `Enter`, and page navigation remain available in all modes.
 just dev             # run in debug mode with vim bindings
 just run             # run in release mode
 just run-vim         # run in release mode with vim bindings
-just run-horizontal  # run in release mode with horizontal preset
+just run-horizontal  # run in release mode with a wider window preset
 just fmt             # format code
 just lint            # run clippy lints
 just test            # run tests

@@ -20,7 +20,11 @@ use cosmic::iced::Size;
 use config::{Config, LayerPlacement, PositionPreset, SurfaceMode};
 
 #[derive(Parser, Debug)]
-#[command(name = "cliphist-cosmic", about = "A Wayland clipboard manager")]
+#[command(
+    name = "cliphist-cosmic",
+    about = "A Wayland clipboard picker",
+    version
+)]
 pub struct Cli {
     #[arg(long, help = "Enable Vim keybindings")]
     pub vim: bool,
