@@ -191,7 +191,8 @@ impl ClipboardApp {
                     .push(
                         widget::scrollable(list)
                             .id(self.list_id.clone())
-                            .height(Length::Fill),
+                            .height(Length::Fill)
+                            .spacing(spacing.space_xs),
                     )
                     .push(footer),
             ),
