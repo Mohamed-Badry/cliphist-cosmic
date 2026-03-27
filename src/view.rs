@@ -1,11 +1,72 @@
 use cosmic::Element;
-use cosmic::iced::{ContentFit, Length, mouse};
+use cosmic::iced::{Color, ContentFit, Length, mouse};
 use cosmic::theme::Button as ButtonStyle;
 use cosmic::widget;
+use cosmic::widget::button;
 
 use crate::app::ClipboardApp;
 use crate::messages::{Message, VimMode};
 use crate::utils::{current_page_indices, page_count};
+
+fn launcher_button_style(selected: bool) -> ButtonStyle {
+    ButtonStyle::Custom {
+        active: Box::new(move |focused, theme| {
+            let focused = selected || focused;
+            let cosmic = theme.cosmic();
+            let rad_s = cosmic.corner_radii.radius_s;
+            let on_bg: Color = cosmic.on_bg_color().into();
+            let a = if focused {
+                button::Catalog::hovered(theme, focused, focused, &ButtonStyle::Text)
+            } else {
+                button::Catalog::active(theme, focused, focused, &ButtonStyle::Text)
+            };
+            button::Style {
+                border_radius: rad_s.into(),
+                outline_width: 0.0,
+                text_color: Some(on_bg),
+                icon_color: Some(on_bg),
+                ..a
+            }
+        }),
+        hovered: Box::new(move |focused, theme| {
+            let focused = selected || focused;
+            let cosmic = theme.cosmic();
+            let rad_s = cosmic.corner_radii.radius_s;
+            let on_bg: Color = cosmic.on_bg_color().into();
+            let text = button::Catalog::hovered(theme, focused, focused, &ButtonStyle::Text);
+            button::Style {
+                border_radius: rad_s.into(),
+                outline_width: 0.0,
+                text_color: Some(on_bg),
+                icon_color: Some(on_bg),
+                ..text
+            }
+        }),
+        disabled: Box::new(|theme| {
+            let rad_s = theme.cosmic().corner_radii.radius_s;
+            let text = button::Catalog::disabled(theme, &ButtonStyle::Text);
+            button::Style {
+                border_radius: rad_s.into(),
+                outline_width: 0.0,
+                ..text
+            }
+        }),
+        pressed: Box::new(move |focused, theme| {
+            let focused = selected || focused;
+            let cosmic = theme.cosmic();
+            let rad_s = cosmic.corner_radii.radius_s;
+            let on_bg: Color = cosmic.on_bg_color().into();
+            let text = button::Catalog::pressed(theme, focused, focused, &ButtonStyle::Text);
+            button::Style {
+                border_radius: rad_s.into(),
+                outline_width: 0.0,
+                text_color: Some(on_bg),
+                icon_color: Some(on_bg),
+                ..text
+            }
+        }),
+    }
+}
 
 impl ClipboardApp {
     pub fn content_view(&self) -> Element<'_, Message> {
@@ -90,12 +151,19 @@ impl ClipboardApp {
 
         let status_text = self.status.clone().unwrap_or_else(|| {
             if self.vim_mode.is_some() {
-                "Drag top handle to move | j/k move | h/l or Left/Right page | i or / focuses search | Esc leaves Insert or closes".to_string()
+                "j/k Navigate · h/l Page · i Search · y Copy · d Delete · Esc Close".to_string()
             } else {
-                "Drag top handle to move | Enter copies | Page Up/Down switches page | Esc closes"
-                    .to_string()
+                "↑↓ Navigate · ←→ Page · Enter Copy · Del Remove · Esc Close".to_string()
             }
         });
+
+        let hint_text = widget::text(status_text)
+            .size(12)
+            .class(cosmic::theme::Text::Custom(|t| {
+                cosmic::iced::widget::text::Style {
+                    color: Some(t.cosmic().accent_text_color().into()),
+                }
+            }));
 
         let content = widget::container(
             widget::column()
@@ -113,7 +181,7 @@ impl ClipboardApp {
                                 .id(self.list_id.clone())
                                 .height(Length::Fill),
                         )
-                        .push(widget::text(status_text).size(12)),
+                        .push(hint_text),
                 ),
         )
         .width(Length::Fill)
@@ -151,8 +219,7 @@ impl ClipboardApp {
             };
 
             widget::button::custom(preview)
-                .class(ButtonStyle::ListItem)
-                .selected(selected)
+                .class(launcher_button_style(selected))
                 .width(Length::Fill)
                 .padding(spacing.space_s)
                 .on_press(Message::SelectAndActivate(index))
@@ -167,8 +234,7 @@ impl ClipboardApp {
             .wrapping(cosmic::iced::widget::text::Wrapping::WordOrGlyph);
 
             widget::button::custom(widget::container(preview).width(Length::Fill))
-                .class(ButtonStyle::ListItem)
-                .selected(selected)
+                .class(launcher_button_style(selected))
                 .width(Length::Fill)
                 .padding(spacing.space_s)
                 .on_press(Message::SelectAndActivate(index))
