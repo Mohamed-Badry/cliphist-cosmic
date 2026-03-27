@@ -2,132 +2,83 @@
 
 ## Current State
 
-This repo is currently a `libcosmic` + `cliphist` Wayland clipboard picker implemented in [src/main.rs](./src/main.rs).
+This repo is a `libcosmic` + `cliphist` Wayland clipboard picker implemented under `src/`.
 
-The current UI shape is:
+Current UI/runtime shape:
 
-- single-pane list layout
+- single-pane paged list
 - search box at the top
 - inline image previews inside the list
-- fixed paging instead of rendering the entire history at once
-- fixed target window size of `480x560`
-- layer-shell popup setup instead of a normal app window
+- fixed target size of `480x560` by default
+- async copy/delete/image loading paths
+- default startup as a normal undecorated COSMIC window
+- optional startup as a Wayland layer surface via CLI
 
-The current history flow is:
+Current history flow:
 
 - `cliphist list` loads entries
 - text and HTML entries render as compact text cards
 - `image/*` entries decode on the visible page only
 - `wl-copy` is used to put a selected entry back on the clipboard
 - `cliphist delete` is wired for delete
+- `cliphist wipe` is available from the overflow menu
 
-## What Was Changed
+## Surface Modes
 
-- Removed the two-pane layout and moved images inline into the list.
-- Reduced visible window size and set fixed size limits.
-- Added cached filtered indices so search and paging stop rebuilding the world repeatedly.
-- Changed image preview loading to page-local async tasks instead of synchronous decode on every selection movement.
-- Reduced preview text size by truncating large clipboard text before layout.
-- Kept keyboard navigation, reload, delete, and copy paths in code.
+The app now supports two startup modes:
 
-## Known Runtime Bugs
+- `--surface window`
+- `--surface layer`
 
-These are the current issues to fix next:
+### Window Mode
 
-- The popup background is still transparent in practice.
-- Clicking an entry hangs the app and it stops responding.
-- `Esc` does not reliably close the popup.
-- `Enter` does not reliably activate/copy the selected entry.
+- implemented through the normal `cosmic::app::run(...)` window path in `src/main.rs`
+- keeps the draggable top handle in `src/view.rs`
+- still behaves like a normal toplevel window
 
-## Likely Causes
+### Layer Mode
 
-### 1. Transparent Background
+- uses `.no_main_window(true)` in `src/main.rs`
+- creates the real surface from `ClipboardApp::init(...)` in `src/app.rs`
+- issues a raw Wayland `get_layer_surface(...)` task via the `iced`/`libcosmic` Wayland commands in `src/config.rs`
+- hides the drag handle because layer surfaces are for placement, not normal mouse dragging
 
-The app is started with `.transparent(false)` in [src/main.rs](./src/main.rs#L922), but the main content is just a plain container. It likely needs an explicit themed/background container layer instead of relying on the default surface fill.
+### Why The App Uses Two Modes
 
-Good first place to inspect:
+Wayland is the reason this is split.
 
-- [src/main.rs](./src/main.rs#L386)
-- `cosmic::widget::layer_container(...)` may be the right fix if it exists in this build
+Regular draggable toplevel windows are positioned by the compositor, not by the app. That means a normal window can be draggable, but it cannot reliably honor startup coordinates. Layer surfaces can request anchors and margins, so they can be placed near a requested edge or absolute offset, but they stop behaving like a normal movable window.
 
-### 2. Clicking Entry Hangs
+That is why the CLI is explicit instead of trying to make one surface type do both jobs.
 
-Click currently triggers immediate copy:
+## Placement CLI
 
-- [src/main.rs](./src/main.rs#L302)
-- [src/main.rs](./src/main.rs#L605)
+Placement flags are only valid with `--surface layer`.
 
-`copy_selected()` calls `decode_entry()` and then `wl-copy` synchronously on the UI path. That is the most likely reason the app freezes when an item is clicked.
+Supported preset positions:
 
-Next fix should be:
+- `top-left`
+- `top-center`
+- `top-right`
+- `center-left`
+- `center`
+- `center-right`
+- `bottom-left`
+- `bottom-center`
+- `bottom-right`
 
-- make click only select
-- make `Enter` perform activation
-- or move copy/decode into `Task::perform(...)`
+Coordinate behavior:
 
-### 3. Missing `Esc` Handling
+- `--x` and `--y` must be passed together
+- `--x --y` override `--position`
+- absolute coordinates are applied as top/left layer margins
 
-There are two current close paths:
+Relevant code:
 
-- `on_escape()` in [src/main.rs](./src/main.rs#L198)
-- unfocus handling in [src/main.rs](./src/main.rs#L206)
-
-`Esc` likely is not reaching `on_escape()` consistently for this layer-surface/search-input setup, or focus is being consumed by the text input. If needed, add an explicit keyboard match for `Named::Escape` inside the subscription handler.
-
-### 4. Missing `Enter` Handling
-
-There are two current activation paths:
-
-- search input submit in [src/main.rs](./src/main.rs#L350)
-- keyboard subscription for `Named::Enter` in [src/main.rs](./src/main.rs#L227)
-
-Because the subscription only handles keys when `status == event::Status::Ignored`, `Enter` may be consumed by the text input and never reach app-level activation.
-
-Likely fixes:
-
-- handle `Enter` from the search input differently
-- or allow `Enter` in the subscription even when the input has focus
-- or separate search submit from item activation
-
-## Recommended Next Steps
-
-1. Fix activation flow first.
-2. Make click only change selection.
-3. Make `Enter` do copy in an async task.
-4. Add explicit `Escape` handling in the keyboard subscription.
-5. Wrap the root content in an explicit opaque COSMIC background container.
-6. After that, runtime-test on the real Wayland session for compositor behavior.
-
-## Notes About Window Behavior
-
-The popup is currently configured as a layer surface in:
-
-- [src/main.rs](./src/main.rs#L737)
-
-Current settings:
-
-- `Layer::Overlay`
-- `Anchor::TOP`
-- `exclusive_zone = 0`
-- fixed width and height
-- top margin of `28`
-
-This was intended to stop it from behaving like a normal tiled app window. If it still tiles or places badly on a given compositor, the next debug step is compositor-specific layer-shell behavior rather than normal `libcosmic` window flags.
-
-## Current Test Status
-
-These pass:
-
-- `cargo fmt`
-- `cargo test`
-
-Current tests cover:
-
-- parsing cliphist list lines
-- HTML preview detection
-- selection movement
-- paging math
-- preview truncation
+- CLI parsing: `src/main.rs`
+- placement model: `src/config.rs`
+- layer startup task: `src/config.rs`
+- init sequencing: `src/app.rs`
 
 ## Important Implementation Details
 
@@ -136,14 +87,46 @@ Current tests cover:
 - Async image results come back through `Message::PageImagesLoaded`.
 - Image previews are only decoded for the current page.
 - Text previews are truncated by `compact_preview_text()`.
+- Copy and delete operations run asynchronously.
+- Layer mode closes on Wayland layer unfocus in `src/keyboard.rs`.
+
+## Key Files
+
+- `src/main.rs`: CLI, PID toggle logic, startup settings, surface mode selection
+- `src/config.rs`: runtime config, placement enums, layer-surface builder task
+- `src/app.rs`: app state, startup init chain, async actions
+- `src/view.rs`: main UI, drag handle, mode-specific root layout
+- `src/keyboard.rs`: key subscriptions and global close behavior
+- `README.md`: user-facing explanation and CLI documentation
+
+## Current Test Status
+
+Latest verified status:
+
+- `cargo fmt` passed
+- `cargo test` passed
+
+Current tests cover:
+
+- CLI parsing and placement validation
+- placement preset mapping
+- vim mode startup and transitions
+- keyboard mapping and global bindings
+- selection movement
+- paging math
+- preview truncation
+- parsing/model behavior
 
 ## Practical Resume Point
 
-Resume from [src/main.rs](./src/main.rs#L240) and [src/main.rs](./src/main.rs#L605).
+If work continues on startup behavior, begin here:
 
-The first high-value patch should be:
+- `src/main.rs`
+- `src/config.rs`
+- `src/app.rs`
 
-- stop copying on click
-- make activation async
-- fix `Esc` and `Enter`
-- then make the root container explicitly opaque
+Most likely next follow-ups:
+
+1. Runtime-test layer placement presets on real COSMIC Wayland sessions.
+2. Decide whether placement flags should auto-switch to layer mode instead of erroring.
+3. Add output selection if multi-monitor targeting becomes necessary.

@@ -2,6 +2,28 @@
 
 This file tracks the major changes made to the current `cliphist-cosmic` tree compared with the earlier prototype.
 
+## Surface Modes And Placement
+
+- Added explicit startup surface selection with `--surface window|layer`.
+- Kept `window` mode as the default so the picker still behaves like a normal draggable COSMIC window.
+- Added `layer` mode for Wayland users who care more about startup placement than mouse drag.
+- Added placement presets with `--position`:
+  - `top-left`
+  - `top-center`
+  - `top-right`
+  - `center-left`
+  - `center`
+  - `center-right`
+  - `bottom-left`
+  - `bottom-center`
+  - `bottom-right`
+- Added absolute placement through `--x` and `--y`, with `--x --y` overriding `--position`.
+- Made placement flags valid only for `--surface layer`.
+- Added startup logic that disables the normal main window and creates a Wayland layer surface only when layer mode is requested.
+- Hid the drag handle in layer mode and kept it in window mode.
+- Added layer-unfocus close handling so the layer-surface picker still behaves like a transient launcher.
+- Documented why this is split into two modes: Wayland compositors control placement for normal toplevel windows, while layer surfaces can request anchored placement but do not behave like normal movable windows.
+
 ## UI And Windowing
 
 - Replaced the older two-pane layout with a single-pane paged list.
