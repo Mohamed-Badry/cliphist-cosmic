@@ -148,3 +148,20 @@ pub async fn delete_entry(line: &str) -> Result<(), String> {
         ))
     }
 }
+
+pub async fn wipe_history() -> Result<(), String> {
+    let output = Command::new("cliphist")
+        .arg("wipe")
+        .output()
+        .await
+        .map_err(|err| format!("Failed to run cliphist wipe: {err}"))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(stderr_message(
+            "cliphist wipe failed",
+            String::from_utf8_lossy(&output.stderr).trim(),
+        ))
+    }
+}

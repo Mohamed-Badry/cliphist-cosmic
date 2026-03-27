@@ -8,7 +8,7 @@ use cosmic::{Application, ApplicationExt, Element, executor};
 use std::time::Duration;
 use std::time::Instant;
 
-use crate::cliphist::{copy_entry, decode_page_images, delete_entry, load_history};
+use crate::cliphist::{copy_entry, decode_page_images, delete_entry, load_history, wipe_history};
 use crate::config::Config;
 use crate::messages::{Message, VimMode};
 use crate::models::ClipItem;
@@ -48,6 +48,7 @@ pub struct ClipboardApp {
     pub(crate) page_image_request: u64,
     pub(crate) status: Option<String>,
     pub(crate) vim_mode: Option<VimMode>,
+    pub(crate) menu_open: bool,
 }
 
 impl Application for ClipboardApp {
@@ -98,6 +99,7 @@ impl Application for ClipboardApp {
             page_image_request: 0,
             status,
             vim_mode,
+            menu_open: false,
         };
 
         app.rebuild_filtered(None);
@@ -247,14 +249,40 @@ impl Application for ClipboardApp {
 
                 Task::batch([self.scroll_to_selection(), image_task])
             }
-            Message::ActivateSelection => self.copy_selected(),
+            Message::ActivateSelection => {
+                self.menu_open = false;
+                self.copy_selected()
+            }
             Message::SelectAndActivate(index) => {
+                self.menu_open = false;
                 self.selected = Some(index);
                 self.copy_selected()
             }
-            Message::Reload => self.reload_history(),
-            Message::DeleteSelected => self.delete_selected(),
+            Message::Reload => {
+                self.menu_open = false;
+                self.reload_history()
+            }
+            Message::DeleteSelected => {
+                self.menu_open = false;
+                self.delete_selected()
+            }
             Message::CloseWindow => self.close_window(),
+            Message::ToggleMenu => {
+                self.menu_open = !self.menu_open;
+                Task::none()
+            }
+            Message::WipeHistory => {
+                self.menu_open = false;
+                self.status = Some("Wiping history...".to_string());
+                Task::perform(wipe_history(), |res| {
+                    cosmic::Action::App(Message::WipeDone(res))
+                })
+            }
+            Message::WipeDone(Ok(())) => self.reload_history(),
+            Message::WipeDone(Err(err)) => {
+                self.status = Some(err);
+                Task::none()
+            }
             Message::CopyDone(Ok(())) => self.close_window(),
             Message::CopyDone(Err(err)) => {
                 self.status = Some(err);

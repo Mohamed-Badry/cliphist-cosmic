@@ -8,6 +8,8 @@ use crate::app::ClipboardApp;
 use crate::messages::{Message, VimMode};
 use crate::utils::{current_page_indices, page_count};
 
+use cosmic::widget::popover;
+
 fn launcher_button_style(selected: bool) -> ButtonStyle {
     ButtonStyle::Custom {
         active: Box::new(move |focused, theme| {
@@ -98,8 +100,28 @@ impl ClipboardApp {
             .id(self.search_id.clone())
             .width(Length::Fill);
 
-        let search_row = {
-            widget::row().spacing(spacing.space_s).push(search).push(
+        let menu_button: Element<'_, Message> = {
+            let btn = widget::button::icon(widget::icon::from_name("view-more-symbolic"))
+                .padding(spacing.space_xxs)
+                .on_press(Message::ToggleMenu)
+                .class(ButtonStyle::Text);
+
+            if self.menu_open {
+                popover(btn)
+                    .popup(self.menu_popup())
+                    .position(popover::Position::Bottom)
+                    .on_close(Message::ToggleMenu)
+                    .into()
+            } else {
+                btn.into()
+            }
+        };
+
+        let search_row = widget::row()
+            .spacing(spacing.space_s)
+            .align_y(cosmic::iced::Alignment::Center)
+            .push(search)
+            .push(
                 widget::container(
                     widget::button::custom(widget::text(""))
                         .on_press(Message::NoOp)
@@ -111,7 +133,7 @@ impl ClipboardApp {
                 .width(Length::Fixed(0.0))
                 .height(Length::Fixed(0.0)),
             )
-        };
+            .push(menu_button);
 
         let results_label = if self.filtered.is_empty() {
             "No results".to_string()
@@ -240,6 +262,48 @@ impl ClipboardApp {
                 .on_press(Message::SelectAndActivate(index))
                 .into()
         }
+    }
+
+    fn menu_popup(&self) -> Element<'_, Message> {
+        let spacing = cosmic::theme::spacing();
+
+        let menu_item = |label: &str, message: Message| -> Element<'_, Message> {
+            widget::button::custom(widget::text(label.to_string()).size(14).width(Length::Fill))
+                .class(ButtonStyle::MenuItem)
+                .width(Length::Fill)
+                .padding([spacing.space_xs, spacing.space_s])
+                .on_press(message)
+                .into()
+        };
+
+        let wipe_item: Element<'_, Message> = widget::button::custom(
+            widget::text("Wipe All History")
+                .size(14)
+                .width(Length::Fill)
+                .class(cosmic::theme::Text::Custom(|t| {
+                    cosmic::iced::widget::text::Style {
+                        color: Some(t.cosmic().accent_text_color().into()),
+                    }
+                })),
+        )
+        .class(ButtonStyle::MenuItem)
+        .width(Length::Fill)
+        .padding([spacing.space_xs, spacing.space_s])
+        .on_press(Message::WipeHistory)
+        .into();
+
+        widget::container(
+            widget::column()
+                .width(Length::Fixed(200.0))
+                .spacing(spacing.space_xxxs)
+                .padding(spacing.space_xxs)
+                .push(menu_item("Reload History", Message::Reload))
+                .push(menu_item("Delete Selected", Message::DeleteSelected))
+                .push(widget::divider::horizontal::light())
+                .push(wipe_item),
+        )
+        .class(cosmic::theme::Container::Dropdown)
+        .into()
     }
 }
 

@@ -18,8 +18,11 @@ pub enum Message {
     EnterInsertMode,
     HandleVimAction(VimAction),
     GlobalEscape,
+    ToggleMenu,
+    WipeHistory,
     CopyDone(Result<(), String>),
     DeleteDone(Result<(), String>),
+    WipeDone(Result<(), String>),
     PageImagesLoaded {
         request_id: u64,
         images: Vec<(usize, Result<Vec<u8>, String>)>,
