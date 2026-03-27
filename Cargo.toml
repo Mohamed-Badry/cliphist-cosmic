@@ -7,12 +7,19 @@ readme = "README.md"
 rust-version = "1.85"
 keywords = ["wayland", "clipboard", "cliphist", "cosmic", "vim"]
 categories = ["command-line-utilities"]
+repository = "https://github.com/Mohamed-Badry/cliphist-cosmic"
+homepage = "https://github.com/Mohamed-Badry/cliphist-cosmic"
 
 [dependencies]
 clap = { version = "4.6.0", features = ["derive"] }
 futures = "0.3.32"
 libcosmic = { git = "https://github.com/pop-os/libcosmic.git" }
-tokio = { version = "1.50.0", features = ["process", "io-util", "rt", "rt-multi-thread"] }
+tokio = { version = "1.50.0", features = [
+    "process",
+    "io-util",
+    "rt",
+    "rt-multi-thread",
+] }
 
 [profile.release]
 codegen-units = 1
