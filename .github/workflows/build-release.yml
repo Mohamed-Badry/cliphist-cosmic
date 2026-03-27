@@ -9,15 +9,21 @@ on:
 env:
   CARGO_TERM_COLOR: always
   BINARY_NAME: cliphist-cosmic
-  TARGET: x86_64-unknown-linux-gnu
 
 jobs:
   build-and-upload:
-    name: Build Linux Release
+    name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
 
     permissions:
       contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
 
     steps:
       - uses: actions/checkout@v4
@@ -46,28 +52,34 @@ jobs:
             libxrandr-dev \
             libegl1-mesa-dev
 
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ env.TARGET }}
+          targets: ${{ matrix.target }}
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
         with:
-          key: ${{ env.TARGET }}
+          key: ${{ matrix.target }}
 
       - name: Build Release
-        run: cargo build --release --locked --target ${{ env.TARGET }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Package Artifacts
         shell: bash
         run: |
           mkdir -p staging
-          cp "target/${{ env.TARGET }}/release/${{ env.BINARY_NAME }}" staging/
+          cp "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}" staging/
           cp README.md staging/
           cp CHANGELOG.md staging/
 
-          RELEASE_NAME="${{ env.BINARY_NAME }}-${{ github.ref_name }}-${{ env.TARGET }}.tar.gz"
+          RELEASE_NAME="${{ env.BINARY_NAME }}-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
 
           tar -czf "$RELEASE_NAME" -C staging .
 
@@ -76,12 +88,11 @@ jobs:
       - name: Upload Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.BINARY_NAME }}-${{ env.TARGET }}
-          path: ${{ env.ASSET_PATH }}
+          name: ${{ env.BINARY_NAME }}-${{ matrix.target }}
+          path: staging/
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           files: ${{ env.ASSET_PATH }}
-          generate_release_notes: true
