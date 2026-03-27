@@ -5,6 +5,7 @@ use std::time::Instant;
 pub enum Message {
     NoOp,
     DragWindow,
+    InsertSearchText(String),
     SearchChanged(String),
     ClearSearch,
     MoveSelection(i32),

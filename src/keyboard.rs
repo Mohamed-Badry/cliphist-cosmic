@@ -3,11 +3,23 @@ use cosmic::iced::event::wayland::{Event as WaylandEvent, LayerEvent};
 use cosmic::iced::event::{self, Event};
 use cosmic::iced::keyboard::key::Named;
 use cosmic::iced::keyboard::{self, Key};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::messages::{Message, VimAction};
 
-pub fn subscription() -> Subscription<Message> {
-    event::listen_with(|event, status, _window| match event {
+static VIM_ENABLED: AtomicBool = AtomicBool::new(false);
+
+pub fn subscription(vim_enabled: bool) -> Subscription<Message> {
+    VIM_ENABLED.store(vim_enabled, Ordering::Relaxed);
+    event::listen_with(map_event)
+}
+
+fn map_event(
+    event: Event,
+    status: event::Status,
+    _window: cosmic::iced::window::Id,
+) -> Option<Message> {
+    match event {
         Event::Window(cosmic::iced::window::Event::Unfocused) => Some(Message::CloseWindow),
         Event::PlatformSpecific(event::PlatformSpecific::Wayland(WaylandEvent::Layer(
             LayerEvent::Unfocused,
@@ -19,9 +31,19 @@ pub fn subscription() -> Subscription<Message> {
             modified_key,
             modifiers,
             ..
-        }) => key_message(key.as_ref(), modified_key.as_ref(), modifiers, status),
+        }) => key_message(
+            key.as_ref(),
+            modified_key.as_ref(),
+            modifiers,
+            status,
+            current_vim_enabled(),
+        ),
         _ => None,
-    })
+    }
+}
+
+fn current_vim_enabled() -> bool {
+    VIM_ENABLED.load(Ordering::Relaxed)
 }
 
 fn key_message(
@@ -29,10 +51,16 @@ fn key_message(
     modified_key: Key<&str>,
     modifiers: keyboard::Modifiers,
     status: event::Status,
+    vim_enabled: bool,
 ) -> Option<Message> {
     escape_message(&modified_key, status)
         .or_else(|| always_handled_message(&modified_key, modifiers))
-        .or_else(|| vim_message(&modified_key, modifiers))
+        .or_else(|| {
+            vim_enabled
+                .then(|| vim_message(&modified_key, modifiers))
+                .flatten()
+        })
+        .or_else(|| search_text_message(&modified_key, modifiers, status))
         .or_else(|| ignored_status_message(&key, modifiers, status))
 }
 
@@ -89,6 +117,30 @@ fn vim_message(key: &Key<&str>, modifiers: keyboard::Modifiers) -> Option<Messag
     }?;
 
     Some(Message::HandleVimAction(action))
+}
+
+fn search_text_message(
+    key: &Key<&str>,
+    modifiers: keyboard::Modifiers,
+    status: event::Status,
+) -> Option<Message> {
+    if status != event::Status::Ignored
+        || modifiers.control()
+        || modifiers.alt()
+        || modifiers.logo()
+    {
+        return None;
+    }
+
+    let Key::Character(text) = key else {
+        return None;
+    };
+
+    if text.chars().any(char::is_control) {
+        return None;
+    }
+
+    Some(Message::InsertSearchText((*text).to_string()))
 }
 
 fn ignored_status_message(
@@ -205,6 +257,7 @@ mod tests {
                 Key::Named(Named::Escape),
                 keyboard::Modifiers::empty(),
                 captured(),
+                true,
             ),
             None
         );
@@ -214,6 +267,7 @@ mod tests {
                 Key::Named(Named::Escape),
                 keyboard::Modifiers::empty(),
                 ignored(),
+                true,
             ),
             Some(Message::GlobalEscape)
         );
@@ -223,6 +277,7 @@ mod tests {
                 Key::Named(Named::Enter),
                 keyboard::Modifiers::empty(),
                 captured(),
+                true,
             ),
             Some(Message::ActivateSelection)
         );
@@ -236,6 +291,7 @@ mod tests {
                 Key::Named(Named::ArrowLeft),
                 keyboard::Modifiers::empty(),
                 captured(),
+                true,
             ),
             Some(Message::PrevPage)
         );
@@ -245,6 +301,7 @@ mod tests {
                 Key::Named(Named::ArrowRight),
                 keyboard::Modifiers::empty(),
                 captured(),
+                true,
             ),
             Some(Message::NextPage)
         );
@@ -258,6 +315,7 @@ mod tests {
                 Key::Named(Named::PageUp),
                 keyboard::Modifiers::empty(),
                 ignored(),
+                true,
             ),
             Some(Message::PrevPage)
         );
@@ -267,6 +325,7 @@ mod tests {
                 Key::Named(Named::PageDown),
                 keyboard::Modifiers::empty(),
                 ignored(),
+                true,
             ),
             Some(Message::NextPage)
         );
@@ -276,6 +335,7 @@ mod tests {
                 Key::Named(Named::Home),
                 keyboard::Modifiers::empty(),
                 ignored(),
+                true,
             ),
             Some(Message::MoveSelection(i32::MIN))
         );
@@ -285,6 +345,7 @@ mod tests {
                 Key::Named(Named::End),
                 keyboard::Modifiers::empty(),
                 ignored(),
+                true,
             ),
             Some(Message::MoveSelection(i32::MAX))
         );
@@ -298,6 +359,7 @@ mod tests {
                 Key::Named(Named::Delete),
                 keyboard::Modifiers::empty(),
                 ignored(),
+                true,
             ),
             Some(Message::DeleteSelected)
         );
@@ -307,6 +369,7 @@ mod tests {
                 Key::Named(Named::Delete),
                 keyboard::Modifiers::SHIFT,
                 ignored(),
+                true,
             ),
             None
         );
@@ -316,6 +379,7 @@ mod tests {
                 Key::Named(Named::Delete),
                 keyboard::Modifiers::empty(),
                 captured(),
+                true,
             ),
             None
         );
@@ -329,6 +393,7 @@ mod tests {
                 Key::Character("r"),
                 keyboard::Modifiers::CTRL,
                 ignored(),
+                true,
             ),
             Some(Message::Reload)
         );
@@ -338,8 +403,57 @@ mod tests {
                 Key::Character("r"),
                 keyboard::Modifiers::CTRL,
                 captured(),
+                true,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn typing_without_focus_starts_search() {
+        assert_eq!(
+            key_message(
+                Key::Character("a"),
+                Key::Character("a"),
+                keyboard::Modifiers::empty(),
+                ignored(),
+                false,
+            ),
+            Some(Message::InsertSearchText("a".to_string()))
+        );
+        assert_eq!(
+            key_message(
+                Key::Character("A"),
+                Key::Character("A"),
+                keyboard::Modifiers::SHIFT,
+                ignored(),
+                false,
+            ),
+            Some(Message::InsertSearchText("A".to_string()))
+        );
+    }
+
+    #[test]
+    fn non_vim_mode_does_not_intercept_vim_letters() {
+        assert_eq!(
+            key_message(
+                Key::Character("j"),
+                Key::Character("j"),
+                keyboard::Modifiers::empty(),
+                ignored(),
+                false,
+            ),
+            Some(Message::InsertSearchText("j".to_string()))
+        );
+        assert_eq!(
+            key_message(
+                Key::Character("i"),
+                Key::Character("i"),
+                keyboard::Modifiers::empty(),
+                ignored(),
+                false,
+            ),
+            Some(Message::InsertSearchText("i".to_string()))
         );
     }
 }

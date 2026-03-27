@@ -172,21 +172,7 @@ impl ClipboardApp {
             );
         }
 
-        let status_text = self.status.clone().unwrap_or_else(|| {
-            if self.vim_mode.is_some() {
-                "j/k Navigate · h/l Page · i Search · y Copy · d Delete · Esc Close".to_string()
-            } else {
-                "↑↓ Navigate · ←→ Page · Enter Copy · Del Remove · Esc Close".to_string()
-            }
-        });
-
-        let hint_text = widget::text(status_text)
-            .size(12)
-            .class(cosmic::theme::Text::Custom(|t| {
-                cosmic::iced::widget::text::Style {
-                    color: Some(t.cosmic().accent_text_color().into()),
-                }
-            }));
+        let footer = shortcut_footer(self.status.as_deref(), self.vim_mode.is_some());
 
         let mut root = widget::column().height(Length::Fill);
 
@@ -207,7 +193,7 @@ impl ClipboardApp {
                             .id(self.list_id.clone())
                             .height(Length::Fill),
                     )
-                    .push(hint_text),
+                    .push(footer),
             ),
         )
         .width(Length::Fill)
@@ -326,4 +312,92 @@ fn mode_badge_chip(label: &str) -> Element<'_, Message> {
         ])
         .class(cosmic::theme::Container::Secondary)
         .into()
+}
+
+fn shortcut_footer<'a>(status: Option<&'a str>, vim_mode: bool) -> Element<'a, Message> {
+    let spacing = cosmic::theme::spacing();
+    let shortcuts = if vim_mode {
+        vim_shortcuts()
+    } else {
+        default_shortcuts()
+    };
+
+    let shortcuts_row = widget::row()
+        .spacing(spacing.space_xxs)
+        .extend(
+            shortcuts
+                .into_iter()
+                .map(|(keys, label)| shortcut_chip(keys, label)),
+        )
+        .wrap()
+        .vertical_spacing(spacing.space_xxs);
+
+    let footer = widget::column()
+        .spacing(spacing.space_xxs)
+        .push_maybe(status.map(status_line))
+        .push(shortcuts_row);
+
+    widget::container(footer)
+        .width(Length::Fill)
+        .padding([spacing.space_xxxs, 0])
+        .into()
+}
+
+fn shortcut_chip<'a>(keys: &'a str, label: &'a str) -> Element<'a, Message> {
+    let spacing = cosmic::theme::spacing();
+
+    widget::container(
+        widget::row()
+            .spacing(spacing.space_xxs)
+            .align_y(cosmic::iced::Alignment::Center)
+            .push(
+                widget::text(keys)
+                    .size(11)
+                    .class(cosmic::theme::Text::Custom(|t| {
+                        cosmic::iced::widget::text::Style {
+                            color: Some(t.cosmic().accent_text_color().into()),
+                        }
+                    })),
+            )
+            .push(widget::text(label).size(11)),
+    )
+    .padding([spacing.space_xxxs, spacing.space_xs])
+    .class(cosmic::theme::Container::Secondary)
+    .into()
+}
+
+fn status_line(status: &str) -> Element<'_, Message> {
+    widget::text(status)
+        .size(12)
+        .class(cosmic::theme::Text::Custom(|t| {
+            cosmic::iced::widget::text::Style {
+                color: Some(t.cosmic().accent_text_color().into()),
+            }
+        }))
+        .into()
+}
+
+fn default_shortcuts() -> &'static [(&'static str, &'static str)] {
+    &[
+        ("Type", "Search"),
+        ("↑/↓", "Move"),
+        ("←/→ or PgUp/PgDn", "Page"),
+        ("Enter", "Copy"),
+        ("Delete", "Remove"),
+        ("Ctrl+R", "Reload"),
+        ("Esc", "Close"),
+    ]
+}
+
+fn vim_shortcuts() -> &'static [(&'static str, &'static str)] {
+    &[
+        ("i or /", "Search"),
+        ("Esc or jk", "Normal"),
+        ("j/k", "Move"),
+        ("h/l", "Page"),
+        ("y", "Copy"),
+        ("d", "Delete"),
+        ("r", "Reload"),
+        ("q", "Close"),
+    ]
 }

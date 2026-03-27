@@ -136,13 +136,22 @@ impl Application for ClipboardApp {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        crate::keyboard::subscription()
+        crate::keyboard::subscription(self.vim_mode.is_some())
     }
 
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
         match message {
             Message::NoOp => Task::none(),
             Message::DragWindow => self.drag(),
+            Message::InsertSearchText(text) => {
+                if matches!(self.vim_mode, Some(VimMode::Normal)) || text.is_empty() {
+                    Task::none()
+                } else {
+                    let mut query = self.search_query.clone();
+                    query.push_str(&text);
+                    self.update(Message::SearchChanged(query))
+                }
+            }
             Message::EnterNormalMode => {
                 if let Some(VimMode::Insert { .. }) = self.vim_mode {
                     self.vim_mode = Some(VimMode::Normal);
