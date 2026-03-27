@@ -85,9 +85,9 @@ impl ClipboardApp {
                     .class(cosmic::theme::Container::Secondary),
             )
             .width(Length::Fill)
-            .height(Length::Fixed(16.0))
+            .height(Length::Fixed(10.0))
             .center_x(Length::Fill)
-            .center_y(Length::Fixed(16.0)),
+            .center_y(Length::Fixed(10.0)),
         )
         .on_drag(Message::DragWindow)
         .interaction(mouse::Interaction::Grab);
