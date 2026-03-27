@@ -61,6 +61,23 @@ There is some engineering in here, but there is also a non-zero amount of border
 
 ## Installation
 
+### Quick install
+
+Linux `x86_64` only:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Mohamed-Badry/cliphist-cosmic/main/install.sh | bash
+```
+
+Install a specific release instead:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Mohamed-Badry/cliphist-cosmic/main/install.sh | bash -s -- v0.1.0
+```
+
+The installer places the binary in `~/.local/bin` by default, or `/usr/local/bin` when run as root.
+It installs `cliphist-cosmic` only; runtime dependencies like `cliphist` and `wl-copy` still need to exist on the system.
+
 ### From source
 
 ```bash
