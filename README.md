@@ -52,11 +52,14 @@ Bind the picker to a global shortcut in **Settings → Keyboard → Shortcuts �
 ### Command presets
 
 ```bash
-cliphist-cosmic                                  # default
-cliphist-cosmic --vim                            # vim navigation
-cliphist-cosmic --vim --width 650 --height 465   # horizontal layout
 cliphist-cosmic --page-size 30 --image-height 60 # compact list
 ```
+
+### Toggle Behavior
+
+By default, launching `cliphist-cosmic` while an instance is already running will **close** the existing window and exit. This allows you to use a single global shortcut to both open and close the picker.
+
+Use `--no-toggle` to disable this behavior and always start a new instance.
 
 ## CLI Options
 
@@ -71,6 +74,7 @@ Options:
       --image-height <IMAGE_HEIGHT>    Image preview height in pixels [default: 116]
       --preview-lines <PREVIEW_LINES>  Max preview lines for text entries [default: 4]
       --preview-chars <PREVIEW_CHARS>  Max preview characters for text entries [default: 280]
+      --no-toggle                      Disable toggle behavior (always start a new instance)
   -h, --help                           Print help
 ```
 

@@ -13,6 +13,7 @@ This file tracks the major changes made to the current `cliphist-cosmic` tree co
 - Switched from a centered layer-shell popup to a fixed-size undecorated toplevel window.
 - Added a small draggable top handle so the window can be moved with the mouse.
 - Moved the vim mode indicator into the main info row to reduce wasted header space.
+- Implemented a PID-based toggle mechanism to allow opening/closing the app with the same shortcut.
 
 ## Clipboard And Data Flow
 
