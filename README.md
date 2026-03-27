@@ -10,6 +10,14 @@ A Wayland clipboard picker built with [libcosmic](https://github.com/pop-os/libc
 - Switchable startup surface mode: draggable window or fixed-position layer surface
 - Configurable window size, page size, and preview limits
 
+## AI Disclaimer
+
+This project was built with heavy AI assistance.
+
+Not in the polished "AI helped with boilerplate" sense. More in the "two guys and a probabilistic autocomplete walked into a Wayland bug" sense.
+
+There is some engineering in here, but there is also a non-zero amount of borderline vibe coding. Read the code, trust the tests, and if something looks cursed, assume the compositor, the model, or both were involved.
+
 ## Requirements
 
 **Runtime:**
