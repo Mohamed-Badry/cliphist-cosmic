@@ -1,3 +1,4 @@
+use crate::cliphist::ImagePreview;
 use std::time::Instant;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,7 +26,7 @@ pub enum Message {
     WipeDone(Result<(), String>),
     PageImagesLoaded {
         request_id: u64,
-        images: Vec<(usize, Result<Vec<u8>, String>)>,
+        images: Vec<(usize, String, Result<ImagePreview, String>)>,
     },
 }
 

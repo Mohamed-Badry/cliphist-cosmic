@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use cosmic::app::{Core, Task};
 use cosmic::iced::Subscription;
@@ -44,6 +44,8 @@ pub struct ClipboardApp {
     pub(crate) dummy_id: widget::Id,
     pub(crate) list_id: widget::Id,
     pub(crate) page_images: HashMap<usize, widget::image::Handle>,
+    pub(crate) image_preview_cache: HashMap<String, widget::image::Handle>,
+    pub(crate) image_preview_order: VecDeque<String>,
     pub(crate) page_image_errors: HashMap<usize, String>,
     pub(crate) page_image_request: u64,
     pub(crate) status: Option<String>,
@@ -95,6 +97,8 @@ impl Application for ClipboardApp {
             dummy_id,
             list_id,
             page_images: HashMap::new(),
+            image_preview_cache: HashMap::new(),
+            image_preview_order: VecDeque::new(),
             page_image_errors: HashMap::new(),
             page_image_request: 0,
             status,
@@ -305,14 +309,16 @@ impl Application for ClipboardApp {
                     return Task::none();
                 }
 
-                self.page_images.clear();
-                self.page_image_errors.clear();
-
-                for (index, result) in images {
+                for (index, line, result) in images {
                     match result {
-                        Ok(bytes) => {
-                            self.page_images
-                                .insert(index, widget::image::Handle::from_bytes(bytes));
+                        Ok(preview) => {
+                            let handle = widget::image::Handle::from_rgba(
+                                preview.width,
+                                preview.height,
+                                preview.pixels,
+                            );
+                            self.cache_image_preview(line, handle.clone());
+                            self.page_images.insert(index, handle);
                         }
                         Err(err) => {
                             self.page_image_errors.insert(index, err);
@@ -441,21 +447,35 @@ impl ClipboardApp {
         self.page_image_errors.clear();
 
         let request_id = self.page_image_request;
-        let visible_images: Vec<(usize, String)> =
+        let mut visible_images = Vec::new();
+        let visible_indices: Vec<usize> =
             current_page_indices(&self.filtered, self.page, self.config.page_size)
                 .iter()
                 .copied()
                 .filter(|index| self.items[*index].kind.is_image())
-                .map(|index| (index, self.items[index].line.clone()))
                 .collect();
+
+        for index in visible_indices {
+            let line = self.items[index].line.clone();
+
+            if let Some(handle) = self.cached_image_preview(&line) {
+                self.page_images.insert(index, handle);
+            } else {
+                visible_images.push((index, line));
+            }
+        }
 
         if visible_images.is_empty() {
             return Task::none();
         }
 
-        Task::perform(decode_page_images(visible_images), move |images| {
-            cosmic::Action::App(Message::PageImagesLoaded { request_id, images })
-        })
+        let preview_width = self.config.window_width;
+        let preview_height = self.config.image_height;
+
+        Task::perform(
+            decode_page_images(visible_images, preview_width, preview_height),
+            move |images| cosmic::Action::App(Message::PageImagesLoaded { request_id, images }),
+        )
     }
 
     pub(crate) fn copy_selected(&mut self) -> Task<Message> {
@@ -488,6 +508,8 @@ impl ClipboardApp {
             }
         }
 
+        self.image_preview_cache.clear();
+        self.image_preview_order.clear();
         self.rebuild_filtered(preferred_line.as_deref());
         let image_task = self.load_visible_images();
 
@@ -504,6 +526,36 @@ impl ClipboardApp {
         Task::perform(async move { delete_entry(&item.line).await }, |res| {
             cosmic::Action::App(Message::DeleteDone(res))
         })
+    }
+
+    fn cached_image_preview(&mut self, line: &str) -> Option<widget::image::Handle> {
+        let handle = self.image_preview_cache.get(line).cloned();
+
+        if handle.is_some() {
+            self.touch_cached_image_preview(line);
+        }
+
+        handle
+    }
+
+    fn cache_image_preview(&mut self, line: String, handle: widget::image::Handle) {
+        self.image_preview_cache.insert(line.clone(), handle);
+        self.touch_cached_image_preview(&line);
+
+        while self.image_preview_order.len() > self.max_cached_image_previews() {
+            if let Some(oldest) = self.image_preview_order.pop_front() {
+                self.image_preview_cache.remove(&oldest);
+            }
+        }
+    }
+
+    fn touch_cached_image_preview(&mut self, line: &str) {
+        self.image_preview_order.retain(|entry| entry != line);
+        self.image_preview_order.push_back(line.to_string());
+    }
+
+    fn max_cached_image_previews(&self) -> usize {
+        self.config.page_size.saturating_mul(6).clamp(32, 192)
     }
 }
 

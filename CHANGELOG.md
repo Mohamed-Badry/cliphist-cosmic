@@ -46,6 +46,7 @@ This file tracks the major changes made to the current `cliphist-cosmic` tree co
 - Made activation/copy happen asynchronously instead of blocking the UI path.
 - Added cached filtered indices so search and paging stop rebuilding the world repeatedly.
 - Limited image decoding to the visible page.
+- Added preview preprocessing for images so the app downsizes them to the display box before caching and rendering.
 - Added async page image loading through `PageImagesLoaded`.
 - Truncated large text previews before layout so oversized clipboard entries do not bloat rendering.
 

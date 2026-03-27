@@ -1,16 +1,29 @@
 use crate::models::ClipItem;
 use crate::utils::stderr_message;
 use futures::future::join_all;
+use image::{DynamicImage, GenericImageView};
 use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImagePreview {
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<u8>,
+}
+
 pub async fn decode_page_images(
     entries: Vec<(usize, String)>,
-) -> Vec<(usize, Result<Vec<u8>, String>)> {
-    let futures = entries
-        .into_iter()
-        .map(|(index, line)| async move { (index, decode_entry(&line).await) });
+    preview_width: f32,
+    preview_height: f32,
+) -> Vec<(usize, String, Result<ImagePreview, String>)> {
+    let preview_width = preview_dimension(preview_width);
+    let preview_height = preview_dimension(preview_height);
+    let futures = entries.into_iter().map(move |(index, line)| async move {
+        let result = decode_image_preview(&line, preview_width, preview_height).await;
+        (index, line, result)
+    });
     join_all(futures).await
 }
 
@@ -71,6 +84,50 @@ pub async fn decode_entry(line: &str) -> Result<Vec<u8>, String> {
             String::from_utf8_lossy(&output.stderr).trim(),
         ))
     }
+}
+
+async fn decode_image_preview(
+    line: &str,
+    preview_width: u32,
+    preview_height: u32,
+) -> Result<ImagePreview, String> {
+    let bytes = decode_entry(line).await?;
+
+    tokio::task::spawn_blocking(move || build_image_preview(bytes, preview_width, preview_height))
+        .await
+        .map_err(|err| format!("Image preview task failed: {err}"))?
+}
+
+fn build_image_preview(
+    bytes: Vec<u8>,
+    preview_width: u32,
+    preview_height: u32,
+) -> Result<ImagePreview, String> {
+    let preview = image::load_from_memory(&bytes)
+        .map_err(|err| format!("Failed to decode image preview: {err}"))?;
+    let preview = thumbnail_to_fit(preview, preview_width.max(1), preview_height.max(1));
+    let preview = preview.to_rgba8();
+    let (width, height) = preview.dimensions();
+
+    Ok(ImagePreview {
+        width,
+        height,
+        pixels: preview.into_raw(),
+    })
+}
+
+fn thumbnail_to_fit(image: DynamicImage, preview_width: u32, preview_height: u32) -> DynamicImage {
+    let (width, height) = image.dimensions();
+
+    if width <= preview_width && height <= preview_height {
+        return image;
+    }
+
+    image.thumbnail(preview_width, preview_height)
+}
+
+fn preview_dimension(value: f32) -> u32 {
+    value.max(1.0).round().min(u32::MAX as f32) as u32
 }
 
 pub async fn copy_entry(item: &ClipItem) -> Result<(), String> {
@@ -163,5 +220,45 @@ pub async fn wipe_history() -> Result<(), String> {
             "cliphist wipe failed",
             String::from_utf8_lossy(&output.stderr).trim(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
+    use std::io::Cursor;
+
+    #[test]
+    fn build_image_preview_downscales_large_images() {
+        let bytes = png_bytes(400, 200);
+        let preview = build_image_preview(bytes, 100, 50).expect("preview should decode");
+
+        assert_eq!(preview.width, 100);
+        assert_eq!(preview.height, 50);
+        assert_eq!(preview.pixels.len(), (100 * 50 * 4) as usize);
+    }
+
+    #[test]
+    fn build_image_preview_does_not_upscale_small_images() {
+        let bytes = png_bytes(40, 20);
+        let preview = build_image_preview(bytes, 100, 50).expect("preview should decode");
+
+        assert_eq!(preview.width, 40);
+        assert_eq!(preview.height, 20);
+        assert_eq!(preview.pixels.len(), (40 * 20 * 4) as usize);
+    }
+
+    fn png_bytes(width: u32, height: u32) -> Vec<u8> {
+        let image = DynamicImage::ImageRgba8(ImageBuffer::from_pixel(
+            width,
+            height,
+            Rgba([0x66, 0x99, 0xcc, 0xff]),
+        ));
+        let mut cursor = Cursor::new(Vec::new());
+        image
+            .write_to(&mut cursor, ImageFormat::Png)
+            .expect("png encoding should succeed");
+        cursor.into_inner()
     }
 }

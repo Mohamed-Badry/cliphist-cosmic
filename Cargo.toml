@@ -12,7 +12,8 @@ homepage = "https://github.com/Mohamed-Badry/cliphist-cosmic"
 
 [dependencies]
 clap = { version = "4.6.0", features = ["derive"] }
-futures = "0.3.32" 
+futures = "0.3.32"
+image = { version = "0.25.8", default-features = false, features = ["bmp", "gif", "jpeg", "png", "webp"] }
 libc = "0.2"
 libcosmic = { git = "https://github.com/pop-os/libcosmic.git" }
 tokio = { version = "1.50.0", features = [
