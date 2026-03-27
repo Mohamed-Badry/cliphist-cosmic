@@ -7,7 +7,6 @@ use cosmic::widget::button;
 use crate::app::ClipboardApp;
 use crate::config::SurfaceMode;
 use crate::messages::{Message, VimMode};
-use crate::utils::{current_page_indices, page_count};
 
 use cosmic::widget::popover;
 
@@ -74,8 +73,8 @@ fn launcher_button_style(selected: bool) -> ButtonStyle {
 impl ClipboardApp {
     pub fn content_view(&self) -> Element<'_, Message> {
         let spacing = cosmic::theme::spacing();
-        let total_pages = page_count(self.filtered.len(), self.config.page_size);
-        let visible = current_page_indices(&self.filtered, self.page, self.config.page_size);
+        let total_pages = self.total_pages();
+        let visible = self.visible_indices();
         let mode_badge = self.vim_mode.as_ref().map(mode_label);
 
         let drag_handle = widget::mouse_area(
@@ -210,7 +209,7 @@ impl ClipboardApp {
         let selected = self.selected == Some(index);
 
         if item.kind.is_image() {
-            let preview: Element<'_, Message> = match self.page_images.get(&index) {
+            let preview: Element<'_, Message> = match self.image_state.preview(index) {
                 Some(handle) => widget::image(handle.clone())
                     .width(Length::Fill)
                     .height(Length::Fixed(self.config.image_height))
@@ -218,9 +217,9 @@ impl ClipboardApp {
                     .into(),
                 None => {
                     let message = self
-                        .page_image_errors
-                        .get(&index)
-                        .map_or("Loading image preview...", String::as_str);
+                        .image_state
+                        .error(index)
+                        .unwrap_or("Loading image preview...");
 
                     widget::container(widget::text(message))
                         .width(Length::Fill)

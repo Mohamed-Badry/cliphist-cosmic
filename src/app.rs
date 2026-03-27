@@ -1,5 +1,3 @@
-use std::collections::{HashMap, VecDeque};
-
 use cosmic::app::{Core, Task};
 use cosmic::iced::Subscription;
 use cosmic::iced::widget::scrollable::RelativeOffset;
@@ -10,7 +8,8 @@ use std::time::Instant;
 
 use crate::cliphist::{copy_entry, decode_page_images, delete_entry, load_history, wipe_history};
 use crate::config::Config;
-use crate::messages::{Message, VimMode};
+use crate::image_state::ImageState;
+use crate::messages::{Message, SelectionMove, VimMode};
 use crate::models::ClipItem;
 use crate::utils::{current_page_indices, next_selected_index, page_count};
 
@@ -43,11 +42,7 @@ pub struct ClipboardApp {
     pub(crate) search_id: widget::Id,
     pub(crate) dummy_id: widget::Id,
     pub(crate) list_id: widget::Id,
-    pub(crate) page_images: HashMap<usize, widget::image::Handle>,
-    pub(crate) image_preview_cache: HashMap<String, widget::image::Handle>,
-    pub(crate) image_preview_order: VecDeque<String>,
-    pub(crate) page_image_errors: HashMap<usize, String>,
-    pub(crate) page_image_request: u64,
+    pub(crate) image_state: ImageState,
     pub(crate) status: Option<String>,
     pub(crate) vim_mode: Option<VimMode>,
     pub(crate) menu_open: bool,
@@ -96,11 +91,7 @@ impl Application for ClipboardApp {
             search_id,
             dummy_id,
             list_id,
-            page_images: HashMap::new(),
-            image_preview_cache: HashMap::new(),
-            image_preview_order: VecDeque::new(),
-            page_image_errors: HashMap::new(),
-            page_image_request: 0,
+            image_state: ImageState::new(config.page_size),
             status,
             vim_mode,
             menu_open: false,
@@ -108,11 +99,7 @@ impl Application for ClipboardApp {
 
         app.rebuild_filtered(None);
 
-        let focus_task = focus_task_for_mode(
-            focus_target_for_mode(app.vim_mode.as_ref()),
-            app.search_id.clone(),
-            app.dummy_id.clone(),
-        );
+        let focus_task = app.focus_task(focus_target_for_mode(app.vim_mode.as_ref()));
 
         let scroll = app.scroll_to_selection();
         let image_task = app.load_visible_images();
@@ -155,11 +142,7 @@ impl Application for ClipboardApp {
             Message::EnterNormalMode => {
                 if let Some(VimMode::Insert { .. }) = self.vim_mode {
                     self.vim_mode = Some(VimMode::Normal);
-                    focus_task_for_mode(
-                        FocusTarget::ModeSink,
-                        self.search_id.clone(),
-                        self.dummy_id.clone(),
-                    )
+                    self.focus_task(FocusTarget::ModeSink)
                 } else {
                     Task::none()
                 }
@@ -167,123 +150,49 @@ impl Application for ClipboardApp {
             Message::EnterInsertMode => {
                 if let Some(VimMode::Normal) = self.vim_mode {
                     self.vim_mode = Some(VimMode::Insert { last_j: None });
-                    focus_task_for_mode(
-                        FocusTarget::SearchInput,
-                        self.search_id.clone(),
-                        self.dummy_id.clone(),
-                    )
+                    self.focus_task(FocusTarget::SearchInput)
                 } else {
                     Task::none()
                 }
             }
             Message::GlobalEscape => self.update(escape_outcome(self.vim_mode.as_ref())),
             Message::HandleVimAction(action) => self.handle_vim_action(action),
-            Message::SearchChanged(query) => {
-                match search_change_action(self.vim_mode.as_ref(), &query, Instant::now()) {
-                    SearchChangeAction::Ignore => Task::none(),
-                    SearchChangeAction::ExitInsert { trimmed_query } => {
-                        self.search_query = trimmed_query;
-                        self.vim_mode = Some(VimMode::Normal);
-                        self.status = None;
-                        self.rebuild_filtered(None);
-                        Task::batch([
-                            focus_task_for_mode(
-                                FocusTarget::ModeSink,
-                                self.search_id.clone(),
-                                self.dummy_id.clone(),
-                            ),
-                            self.scroll_to_selection(),
-                            self.load_visible_images(),
-                        ])
-                    }
-                    SearchChangeAction::Apply { query, next_last_j } => {
-                        if let Some(VimMode::Insert { last_j }) = &mut self.vim_mode {
-                            *last_j = next_last_j;
-                        }
-
-                        self.search_query = query;
-                        self.status = None;
-                        self.rebuild_filtered(None);
-                        let image_task = self.load_visible_images();
-
-                        Task::batch([
-                            focus_task_for_mode(
-                                FocusTarget::SearchInput,
-                                self.search_id.clone(),
-                                self.dummy_id.clone(),
-                            ),
-                            self.scroll_to_selection(),
-                            image_task,
-                        ])
-                    }
-                }
-            }
+            Message::SearchChanged(query) => self.update_search(query),
             Message::ClearSearch => {
-                self.search_query.clear();
-                self.status = None;
-                self.rebuild_filtered(None);
-                let image_task = self.load_visible_images();
-
-                Task::batch([
-                    focus_task_for_mode(
-                        FocusTarget::SearchInput,
-                        self.search_id.clone(),
-                        self.dummy_id.clone(),
-                    ),
-                    self.scroll_to_selection(),
-                    image_task,
-                ])
+                self.apply_search_query(String::new(), FocusTarget::SearchInput)
             }
-            Message::MoveSelection(delta) => {
+            Message::MoveSelection(movement) => {
                 let previous_page = self.page;
-                self.move_selection(delta);
+                self.move_selection(movement);
                 self.sync_page_to_selection();
                 self.status = None;
-                let image_task = if self.page != previous_page {
-                    self.load_visible_images()
-                } else {
-                    Task::none()
-                };
-
-                Task::batch([self.scroll_to_selection(), image_task])
+                self.refresh_visible_content(self.page != previous_page)
             }
             Message::PrevPage => {
                 let changed = self.change_page(-1);
                 self.status = None;
-                let image_task = if changed {
-                    self.load_visible_images()
-                } else {
-                    Task::none()
-                };
-
-                Task::batch([self.scroll_to_selection(), image_task])
+                self.refresh_visible_content(changed)
             }
             Message::NextPage => {
                 let changed = self.change_page(1);
                 self.status = None;
-                let image_task = if changed {
-                    self.load_visible_images()
-                } else {
-                    Task::none()
-                };
-
-                Task::batch([self.scroll_to_selection(), image_task])
+                self.refresh_visible_content(changed)
             }
             Message::ActivateSelection => {
-                self.menu_open = false;
+                self.close_menu();
                 self.copy_selected()
             }
             Message::SelectAndActivate(index) => {
-                self.menu_open = false;
+                self.close_menu();
                 self.selected = Some(index);
                 self.copy_selected()
             }
             Message::Reload => {
-                self.menu_open = false;
+                self.close_menu();
                 self.reload_history()
             }
             Message::DeleteSelected => {
-                self.menu_open = false;
+                self.close_menu();
                 self.delete_selected()
             }
             Message::CloseWindow => self.close_window(),
@@ -292,7 +201,7 @@ impl Application for ClipboardApp {
                 Task::none()
             }
             Message::WipeHistory => {
-                self.menu_open = false;
+                self.close_menu();
                 self.status = Some("Wiping history...".to_string());
                 Task::perform(wipe_history(), |res| {
                     cosmic::Action::App(Message::WipeDone(res))
@@ -314,27 +223,7 @@ impl Application for ClipboardApp {
                 Task::none()
             }
             Message::PageImagesLoaded { request_id, images } => {
-                if request_id != self.page_image_request {
-                    return Task::none();
-                }
-
-                for (index, line, result) in images {
-                    match result {
-                        Ok(preview) => {
-                            let handle = widget::image::Handle::from_rgba(
-                                preview.width,
-                                preview.height,
-                                preview.pixels,
-                            );
-                            self.cache_image_preview(line, handle.clone());
-                            self.page_images.insert(index, handle);
-                        }
-                        Err(err) => {
-                            self.page_image_errors.insert(index, err);
-                        }
-                    }
-                }
-
+                self.image_state.apply_loaded(request_id, images);
                 Task::none()
             }
         }
@@ -352,6 +241,14 @@ impl Application for ClipboardApp {
 impl ClipboardApp {
     pub(crate) fn close_window(&self) -> Task<Message> {
         cosmic::iced::exit()
+    }
+
+    pub(crate) fn total_pages(&self) -> usize {
+        page_count(self.filtered.len(), self.config.page_size)
+    }
+
+    pub(crate) fn visible_indices(&self) -> &[usize] {
+        current_page_indices(&self.filtered, self.page, self.config.page_size)
     }
 
     pub(crate) fn rebuild_filtered(&mut self, preferred_line: Option<&str>) {
@@ -385,12 +282,12 @@ impl ClipboardApp {
             .or_else(|| self.filtered.first().copied());
     }
 
-    pub(crate) fn move_selection(&mut self, delta: i32) {
-        self.selected = next_selected_index(&self.filtered, self.selected, delta);
+    pub(crate) fn move_selection(&mut self, movement: SelectionMove) {
+        self.selected = next_selected_index(&self.filtered, self.selected, movement);
     }
 
     pub(crate) fn sync_page_to_selection(&mut self) {
-        let total_pages = page_count(self.filtered.len(), self.config.page_size);
+        let total_pages = self.total_pages();
 
         if total_pages == 0 {
             self.page = 0;
@@ -418,7 +315,7 @@ impl ClipboardApp {
         let changed = next_page != self.page;
         self.page = next_page;
 
-        let visible = current_page_indices(&self.filtered, self.page, self.config.page_size);
+        let visible = self.visible_indices();
         if !self.selected.is_some_and(|index| visible.contains(&index)) {
             self.selected = visible.first().copied();
         }
@@ -427,7 +324,7 @@ impl ClipboardApp {
     }
 
     pub(crate) fn scroll_to_selection(&self) -> Task<Message> {
-        let visible = current_page_indices(&self.filtered, self.page, self.config.page_size);
+        let visible = self.visible_indices();
         let Some(selected) = self.selected else {
             return Task::none();
         };
@@ -451,28 +348,14 @@ impl ClipboardApp {
     }
 
     pub(crate) fn load_visible_images(&mut self) -> Task<Message> {
-        self.page_image_request = self.page_image_request.wrapping_add(1);
-        self.page_images.clear();
-        self.page_image_errors.clear();
-
-        let request_id = self.page_image_request;
-        let mut visible_images = Vec::new();
-        let visible_indices: Vec<usize> =
-            current_page_indices(&self.filtered, self.page, self.config.page_size)
-                .iter()
-                .copied()
-                .filter(|index| self.items[*index].kind.is_image())
-                .collect();
-
-        for index in visible_indices {
-            let line = self.items[index].line.clone();
-
-            if let Some(handle) = self.cached_image_preview(&line) {
-                self.page_images.insert(index, handle);
-            } else {
-                visible_images.push((index, line));
-            }
-        }
+        let visible_images = self
+            .visible_indices()
+            .iter()
+            .copied()
+            .filter(|index| self.items[*index].kind.is_image())
+            .map(|index| (index, self.items[index].line.clone()))
+            .collect::<Vec<_>>();
+        let (request_id, visible_images) = self.image_state.begin_page(visible_images);
 
         if visible_images.is_empty() {
             return Task::none();
@@ -517,12 +400,9 @@ impl ClipboardApp {
             }
         }
 
-        self.image_preview_cache.clear();
-        self.image_preview_order.clear();
+        self.image_state.clear();
         self.rebuild_filtered(preferred_line.as_deref());
-        let image_task = self.load_visible_images();
-
-        Task::batch([self.scroll_to_selection(), image_task])
+        self.refresh_visible_content(true)
     }
 
     pub(crate) fn delete_selected(&mut self) -> Task<Message> {
@@ -537,34 +417,55 @@ impl ClipboardApp {
         })
     }
 
-    fn cached_image_preview(&mut self, line: &str) -> Option<widget::image::Handle> {
-        let handle = self.image_preview_cache.get(line).cloned();
+    fn update_search(&mut self, query: String) -> Task<Message> {
+        match search_change_action(self.vim_mode.as_ref(), &query, Instant::now()) {
+            SearchChangeAction::Ignore => Task::none(),
+            SearchChangeAction::ExitInsert { trimmed_query } => {
+                self.vim_mode = Some(VimMode::Normal);
+                self.apply_search_query(trimmed_query, FocusTarget::ModeSink)
+            }
+            SearchChangeAction::Apply { query, next_last_j } => {
+                if let Some(VimMode::Insert { last_j }) = &mut self.vim_mode {
+                    *last_j = next_last_j;
+                }
 
-        if handle.is_some() {
-            self.touch_cached_image_preview(line);
-        }
-
-        handle
-    }
-
-    fn cache_image_preview(&mut self, line: String, handle: widget::image::Handle) {
-        self.image_preview_cache.insert(line.clone(), handle);
-        self.touch_cached_image_preview(&line);
-
-        while self.image_preview_order.len() > self.max_cached_image_previews() {
-            if let Some(oldest) = self.image_preview_order.pop_front() {
-                self.image_preview_cache.remove(&oldest);
+                self.apply_search_query(query, FocusTarget::SearchInput)
             }
         }
     }
 
-    fn touch_cached_image_preview(&mut self, line: &str) {
-        self.image_preview_order.retain(|entry| entry != line);
-        self.image_preview_order.push_back(line.to_string());
+    fn apply_search_query(&mut self, query: String, focus_target: FocusTarget) -> Task<Message> {
+        self.search_query = query;
+        self.status = None;
+        self.rebuild_filtered(None);
+        self.refresh_after_filter_change(focus_target)
     }
 
-    fn max_cached_image_previews(&self) -> usize {
-        self.config.page_size.saturating_mul(6).clamp(32, 192)
+    fn refresh_after_filter_change(&mut self, focus_target: FocusTarget) -> Task<Message> {
+        let focus = self.focus_task(focus_target);
+        let scroll = self.scroll_to_selection();
+        let images = self.load_visible_images();
+
+        Task::batch([focus, scroll, images])
+    }
+
+    fn refresh_visible_content(&mut self, reload_images: bool) -> Task<Message> {
+        let scroll = self.scroll_to_selection();
+        let images = if reload_images {
+            self.load_visible_images()
+        } else {
+            Task::none()
+        };
+
+        Task::batch([scroll, images])
+    }
+
+    fn focus_task(&self, target: FocusTarget) -> Task<Message> {
+        focus_task_for_mode(target, self.search_id.clone(), self.dummy_id.clone())
+    }
+
+    fn close_menu(&mut self) {
+        self.menu_open = false;
     }
 }
 

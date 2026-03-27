@@ -86,15 +86,19 @@ Relevant code:
 - Page image loading is done by `load_visible_images()`.
 - Async image results come back through `Message::PageImagesLoaded`.
 - Image previews are only decoded for the current page.
+- Page image handles, request tracking, and preview cache eviction now live in `src/image_state.rs`.
 - Text previews are truncated by `compact_preview_text()`.
 - Copy and delete operations run asynchronously.
 - Layer mode closes on Wayland layer unfocus in `src/keyboard.rs`.
+- Selection movement is modeled with an explicit enum instead of sentinel integers.
+- Keyboard subscriptions are split into close events and mode-specific key mapping; there is no global shared vim-mode flag anymore.
 
 ## Key Files
 
 - `src/main.rs`: CLI, PID toggle logic, startup settings, surface mode selection
 - `src/config.rs`: runtime config, placement enums, layer-surface builder task
 - `src/app.rs`: app state, startup init chain, async actions
+- `src/image_state.rs`: page image state, preview cache reuse, cache eviction
 - `src/view.rs`: main UI, drag handle, mode-specific root layout
 - `src/keyboard.rs`: key subscriptions and global close behavior
 - `README.md`: user-facing explanation and CLI documentation
@@ -112,6 +116,7 @@ Current tests cover:
 - placement preset mapping
 - vim mode startup and transitions
 - keyboard mapping and global bindings
+- image preview cache reuse and eviction
 - selection movement
 - paging math
 - preview truncation

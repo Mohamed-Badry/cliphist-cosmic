@@ -3,20 +3,22 @@ use cosmic::iced::event::wayland::{Event as WaylandEvent, LayerEvent};
 use cosmic::iced::event::{self, Event};
 use cosmic::iced::keyboard::key::Named;
 use cosmic::iced::keyboard::{self, Key};
-use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::messages::{Message, VimAction};
-
-static VIM_ENABLED: AtomicBool = AtomicBool::new(false);
+use crate::messages::{Message, SelectionMove, VimAction};
 
 pub fn subscription(vim_enabled: bool) -> Subscription<Message> {
-    VIM_ENABLED.store(vim_enabled, Ordering::Relaxed);
-    event::listen_with(map_event)
+    let key_events = if vim_enabled {
+        event::listen_with(map_vim_key_event)
+    } else {
+        event::listen_with(map_default_key_event)
+    };
+
+    Subscription::batch([event::listen_with(map_close_event), key_events])
 }
 
-fn map_event(
+fn map_close_event(
     event: Event,
-    status: event::Status,
+    _status: event::Status,
     _window: cosmic::iced::window::Id,
 ) -> Option<Message> {
     match event {
@@ -26,24 +28,44 @@ fn map_event(
             _,
             _,
         ))) => Some(Message::CloseWindow),
-        Event::Keyboard(keyboard::Event::KeyPressed {
-            key,
-            modified_key,
-            modifiers,
-            ..
-        }) => key_message(
-            key.as_ref(),
-            modified_key.as_ref(),
-            modifiers,
-            status,
-            current_vim_enabled(),
-        ),
         _ => None,
     }
 }
 
-fn current_vim_enabled() -> bool {
-    VIM_ENABLED.load(Ordering::Relaxed)
+fn map_vim_key_event(
+    event: Event,
+    status: event::Status,
+    _window: cosmic::iced::window::Id,
+) -> Option<Message> {
+    map_key_event(event, status, true)
+}
+
+fn map_default_key_event(
+    event: Event,
+    status: event::Status,
+    _window: cosmic::iced::window::Id,
+) -> Option<Message> {
+    map_key_event(event, status, false)
+}
+
+fn map_key_event(event: Event, status: event::Status, vim_enabled: bool) -> Option<Message> {
+    let Event::Keyboard(keyboard::Event::KeyPressed {
+        key,
+        modified_key,
+        modifiers,
+        ..
+    }) = event
+    else {
+        return None;
+    };
+
+    key_message(
+        key.as_ref(),
+        modified_key.as_ref(),
+        modifiers,
+        status,
+        vim_enabled,
+    )
 }
 
 fn key_message(
@@ -77,10 +99,10 @@ fn escape_message(key: &Key<&str>, status: event::Status) -> Option<Message> {
 fn always_handled_message(key: &Key<&str>, modifiers: keyboard::Modifiers) -> Option<Message> {
     match key {
         Key::Named(Named::ArrowUp) if !has_conflicting_modifiers(modifiers) => {
-            Some(Message::MoveSelection(-1))
+            Some(Message::MoveSelection(SelectionMove::Relative(-1)))
         }
         Key::Named(Named::ArrowDown) if !has_conflicting_modifiers(modifiers) => {
-            Some(Message::MoveSelection(1))
+            Some(Message::MoveSelection(SelectionMove::Relative(1)))
         }
         Key::Named(Named::ArrowLeft) if !has_conflicting_modifiers(modifiers) => {
             Some(Message::PrevPage)
@@ -164,8 +186,8 @@ fn ignored_status_message(
     match key {
         Key::Named(Named::PageDown) => Some(Message::NextPage),
         Key::Named(Named::PageUp) => Some(Message::PrevPage),
-        Key::Named(Named::Home) => Some(Message::MoveSelection(i32::MIN)),
-        Key::Named(Named::End) => Some(Message::MoveSelection(i32::MAX)),
+        Key::Named(Named::Home) => Some(Message::MoveSelection(SelectionMove::First)),
+        Key::Named(Named::End) => Some(Message::MoveSelection(SelectionMove::Last)),
         Key::Named(Named::Delete)
             if !modifiers.control()
                 && !modifiers.alt()
@@ -337,7 +359,7 @@ mod tests {
                 ignored(),
                 true,
             ),
-            Some(Message::MoveSelection(i32::MIN))
+            Some(Message::MoveSelection(SelectionMove::First))
         );
         assert_eq!(
             key_message(
@@ -347,7 +369,7 @@ mod tests {
                 ignored(),
                 true,
             ),
-            Some(Message::MoveSelection(i32::MAX))
+            Some(Message::MoveSelection(SelectionMove::Last))
         );
     }
 

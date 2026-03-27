@@ -8,7 +8,7 @@ pub enum Message {
     InsertSearchText(String),
     SearchChanged(String),
     ClearSearch,
-    MoveSelection(i32),
+    MoveSelection(SelectionMove),
     PrevPage,
     NextPage,
     ActivateSelection,
@@ -29,6 +29,13 @@ pub enum Message {
         request_id: u64,
         images: Vec<(usize, String, Result<ImagePreview, String>)>,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectionMove {
+    Relative(i32),
+    First,
+    Last,
 }
 
 #[derive(Clone, Debug, PartialEq)]

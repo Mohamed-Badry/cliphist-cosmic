@@ -71,11 +71,19 @@ This file tracks the major changes made to the current `cliphist-cosmic` tree co
 - Kept `Left` / `Right` page navigation global regardless of mode.
 - Added a visible mode indicator in the UI.
 
+### Internal Architecture
+
+- Extracted image preview page state and cache eviction into `src/image_state.rs` instead of keeping raw cache maps inside `ClipboardApp`.
+- Replaced magic selection sentinels with an explicit `SelectionMove` enum so Home/End and relative navigation do not share an implicit integer protocol.
+- Refactored keyboard subscriptions to use separate close/key listeners instead of a global atomic flag for vim mode.
+- Added app helpers for search refresh, focus changes, and visible-content refresh so `ClipboardApp::update(...)` has less repeated task orchestration.
+
 ### Reliability And Tests
 
 - Added broader tests around vim mode startup, focus selection, escape behavior, and `jk` timing.
 - Added keyboard mapping tests for logical key handling and global bindings.
 - Added helper tests for paging, preview truncation, HTML detection, and parsing/model behavior.
+- Added tests around image preview cache reuse and eviction.
 - Current test suite passes with `cargo test`.
 
 ### Build And Tooling

@@ -1,3 +1,5 @@
+use crate::messages::SelectionMove;
+
 pub fn current_page_indices(filtered: &[usize], page: usize, page_size: usize) -> &[usize] {
     if filtered.is_empty() {
         return &filtered[0..0];
@@ -54,30 +56,29 @@ pub fn compact_preview_text(
 pub fn next_selected_index(
     filtered: &[usize],
     current: Option<usize>,
-    delta: i32,
+    movement: SelectionMove,
 ) -> Option<usize> {
     if filtered.is_empty() {
         return None;
     }
 
-    if delta == i32::MIN {
-        return filtered.first().copied();
-    }
+    let delta = match movement {
+        SelectionMove::First => return filtered.first().copied(),
+        SelectionMove::Last => return filtered.last().copied(),
+        SelectionMove::Relative(delta) => delta,
+    };
 
-    if delta == i32::MAX {
-        return filtered.last().copied();
-    }
-
-    if current.is_none() {
+    let Some(current) = current else {
         return if delta < 0 {
             filtered.last().copied()
         } else {
             filtered.first().copied()
         };
-    }
+    };
 
-    let position = current
-        .and_then(|index| filtered.iter().position(|candidate| *candidate == index))
+    let position = filtered
+        .iter()
+        .position(|candidate| *candidate == current)
         .unwrap_or(0) as i32;
     let next = (position + delta).clamp(0, filtered.len() as i32 - 1) as usize;
     filtered.get(next).copied()
@@ -106,17 +107,39 @@ pub fn stderr_message(prefix: &str, stderr: &str) -> String {
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::messages::SelectionMove;
 
     #[test]
     fn selection_moves_inside_filtered_results() {
         let filtered = vec![2, 5, 9];
-        assert_eq!(next_selected_index(&filtered, None, 1), Some(2));
-        assert_eq!(next_selected_index(&filtered, None, -1), Some(9));
-        assert_eq!(next_selected_index(&filtered, Some(5), 1), Some(9));
-        assert_eq!(next_selected_index(&filtered, Some(9), 1), Some(9));
-        assert_eq!(next_selected_index(&filtered, Some(9), -10), Some(2));
-        assert_eq!(next_selected_index(&filtered, Some(5), i32::MIN), Some(2));
-        assert_eq!(next_selected_index(&filtered, Some(5), i32::MAX), Some(9));
+        assert_eq!(
+            next_selected_index(&filtered, None, SelectionMove::Relative(1)),
+            Some(2)
+        );
+        assert_eq!(
+            next_selected_index(&filtered, None, SelectionMove::Relative(-1)),
+            Some(9)
+        );
+        assert_eq!(
+            next_selected_index(&filtered, Some(5), SelectionMove::Relative(1)),
+            Some(9)
+        );
+        assert_eq!(
+            next_selected_index(&filtered, Some(9), SelectionMove::Relative(1)),
+            Some(9)
+        );
+        assert_eq!(
+            next_selected_index(&filtered, Some(9), SelectionMove::Relative(-10)),
+            Some(2)
+        );
+        assert_eq!(
+            next_selected_index(&filtered, Some(5), SelectionMove::First),
+            Some(2)
+        );
+        assert_eq!(
+            next_selected_index(&filtered, Some(5), SelectionMove::Last),
+            Some(9)
+        );
     }
 
     #[test]

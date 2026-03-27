@@ -1,6 +1,7 @@
 mod app;
 mod cliphist;
 mod config;
+mod image_state;
 mod keyboard;
 mod messages;
 mod models;
