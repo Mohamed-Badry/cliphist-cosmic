@@ -1,4 +1,5 @@
 use cosmic::iced::Subscription;
+use cosmic::iced::event::wayland::{Event as WaylandEvent, LayerEvent};
 use cosmic::iced::event::{self, Event};
 use cosmic::iced::keyboard::key::Named;
 use cosmic::iced::keyboard::{self, Key};
@@ -8,6 +9,11 @@ use crate::messages::{Message, VimAction};
 pub fn subscription() -> Subscription<Message> {
     event::listen_with(|event, status, _window| match event {
         Event::Window(cosmic::iced::window::Event::Unfocused) => Some(Message::CloseWindow),
+        Event::PlatformSpecific(event::PlatformSpecific::Wayland(WaylandEvent::Layer(
+            LayerEvent::Unfocused,
+            _,
+            _,
+        ))) => Some(Message::CloseWindow),
         Event::Keyboard(keyboard::Event::KeyPressed {
             key,
             modified_key,

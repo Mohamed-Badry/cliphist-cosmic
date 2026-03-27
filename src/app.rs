@@ -112,8 +112,15 @@ impl Application for ClipboardApp {
 
         let scroll = app.scroll_to_selection();
         let image_task = app.load_visible_images();
+        let init_task = if app.config.uses_layer_surface() {
+            app.config
+                .layer_surface_task::<Message>()
+                .chain(Task::batch([focus_task, scroll, image_task]))
+        } else {
+            Task::batch([focus_task, scroll, image_task])
+        };
 
-        (app, Task::batch([focus_task, scroll, image_task]))
+        (app, init_task)
     }
 
     fn on_escape(&mut self) -> Task<Self::Message> {

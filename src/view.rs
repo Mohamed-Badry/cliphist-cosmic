@@ -5,6 +5,7 @@ use cosmic::widget;
 use cosmic::widget::button;
 
 use crate::app::ClipboardApp;
+use crate::config::SurfaceMode;
 use crate::messages::{Message, VimMode};
 use crate::utils::{current_page_indices, page_count};
 
@@ -187,24 +188,27 @@ impl ClipboardApp {
                 }
             }));
 
+        let mut root = widget::column().height(Length::Fill);
+
+        if self.config.surface_mode == SurfaceMode::Window {
+            root = root.push(drag_handle);
+        }
+
         let content = widget::container(
-            widget::column()
-                .height(Length::Fill)
-                .push(drag_handle)
-                .push(
-                    widget::column()
-                        .height(Length::Fill)
-                        .spacing(spacing.space_m)
-                        .padding([spacing.space_m, spacing.space_l])
-                        .push(search_row)
-                        .push(info_row)
-                        .push(
-                            widget::scrollable(list)
-                                .id(self.list_id.clone())
-                                .height(Length::Fill),
-                        )
-                        .push(hint_text),
-                ),
+            root.push(
+                widget::column()
+                    .height(Length::Fill)
+                    .spacing(spacing.space_m)
+                    .padding([spacing.space_m, spacing.space_l])
+                    .push(search_row)
+                    .push(info_row)
+                    .push(
+                        widget::scrollable(list)
+                            .id(self.list_id.clone())
+                            .height(Length::Fill),
+                    )
+                    .push(hint_text),
+            ),
         )
         .width(Length::Fill)
         .height(Length::Fill)
